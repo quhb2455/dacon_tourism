@@ -34,8 +34,6 @@ class Trainer() :
                                                                             self.args.CHECKPOINT)
             
         for epoch in range(self.args.START_EPOCH + 1, self.args.EPOCHS + 1) :
-            # control RandomGridShuffle, Mixup and WeightFreeze
-            self.training_controller(epoch)
 
             # training
             self.training(epoch)
@@ -127,20 +125,6 @@ class Trainer() :
                                                                       batch_size=self.args.BATCH_SIZE)
         self.log_writter = SummaryWriter(os.path.join(self.args.LOG , str(kfold)))
         self.save_path = os.path.join(self.args.OUTPUT, str(kfold) + self.args.MODEL_NAME)
-
-    def training_controller(self, epoch):
-        # Turn off RandomGridShuffle and Turn on Mixup
-        if epoch == self.args.CTL_STEP[0]:
-            self.train_loader, self.val_loader = train_and_valid_dataload(self.img_set,
-                                                                          self.label_set,
-                                                                          transform_parser(grid_shuffle_p=0),
-                                                                          self.args.BATCH_SIZE)
-            self.APPLY_MIXUP = True
-
-        # Turn off Mixup and freeze classifier
-        elif epoch == self.args.CTL_STEP[1]:
-            self.APPLY_MIXUP = False
-            self.model = weight_freeze(self.model)
 
 
     def get_dataloader(self, csv_path, img_path, batch_size):
