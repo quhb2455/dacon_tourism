@@ -1,0 +1,22 @@
+cat1 :
+    num_layers: 3
+    in_c : 1024
+    out_c : 6
+    dropout_rate : 0.4
+    bn : False
+    
+cat2 :
+    num_mlp : 3
+    num_layers: 3
+    in_c : 1024
+    out_c : [2, 5, 8]
+    dropout_rate : 0.4
+    bn : False
+    
+cat3 :
+    num_mlp : 16
+    num_layers: 3
+    in_c : 1024
+    out_c : [18, 2, 19, 8, 2, 8, 2, 10, 14, 8, 8, 3, 6, 3, 9, 7]
+    dropout_rate : 0.4
+    bn : False

@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 import json
+import yaml
 import numpy as np
 import torch
 from sklearn.metrics import accuracy_score
@@ -99,3 +100,7 @@ def mixup(imgs, labels):
 
     return mixed_imgs, lam, target_a, target_b
 
+def read_cfg(path) :
+    with open(path) as f:
+        film = yaml.load(f, Loader=yaml.FullLoader)
+    return film['cat1'], film['cat2'], film['cat3']
