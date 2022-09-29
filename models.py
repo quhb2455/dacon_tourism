@@ -95,7 +95,9 @@ class ClassifierHead1(nn.Module) :
         self.linear = MLP(num_layers=num_layers, **kwargs)
 
     def forward(self, x):
-        return self.linear(x)
+        output = self.linear(x)
+        pred = torch.argmax(output, dim=1)
+        return output, pred
 
 
 # 중분류 - 6개 -> 18개
@@ -106,17 +108,14 @@ class ClassifierHead2(nn.Module) :
 
     def forward(self, x, prev_head):
         pred = torch.zeros(1, dtype=torch.int32).to('cuda')
+
         for i in range(0, prev_head.shape[0]) :
             prev_head[i] = 2 if prev_head[i] == 3 else prev_head[i]
             output = self.linear[prev_head[i]](x[i])
             arg = torch.argmax(output, dim=0)
             pred = torch.cat([pred, arg.view(-1)], dim=0)
-            print("arg : ", arg)
 
-        print("pred : ", pred)
-        print("pred[1:] : ", pred[1:])
-        print('== cat2 done ==')
-        return self.linear[prev_head](x)
+        return pred[1:]
 
 
 # 소분류 - 18개 -> 128개
@@ -134,6 +133,8 @@ if __name__ == '__main__' :
     # m1 = ClassifierHead1(num_layers=3, in_c=1024, out_c=6, dropout_rate=0.4, bn=False).to("cuda")
     # m2 = ClassifierHead2(num_mlp=3, num_layers=3, in_c=1024, out_c=[2, 5, 8], dropout_rate=0.4, bn=False).to("cuda")
     # m3 = ClassifierHead3(num_mlp=16, num_layers=3, in_c=1024, out_c=[18, 2, 19, 8, 2, 8, 2, 10, 14, 8, 8, 3, 6, 3, 9, 7], dropout_rate=0.4, bn=False).to("cuda")
+    from utils import CATEGORY_CLS_ENCODER
+    CC_ENCODER = CATEGORY_CLS_ENCODER(path='./data/train.csv')
 
     from utils import read_cfg
     c1, c2, c3 = read_cfg('config.yaml')
@@ -143,31 +144,74 @@ if __name__ == '__main__' :
     m2 = ClassifierHead2(**c2).to("cuda")
     m3 = ClassifierHead3(**c3).to("cuda")
 
-    data =torch.rand((16,3,224,224)).to('cuda')
+    data = torch.rand((16,3,224,224)).to('cuda')
     print(data.shape)
 
     feature = m0(data)
-    print(feature.shape)
-    x1 = m1(feature)
+    output, pred = m1(feature)
 
-    head = torch.argmax(x1, dim=1)
-    print('head : ', head)
-    batch_num_cat2 = torch.where(((head == 0) | (head == 1) | (head == 3)))
-    batch_num_cat3 = torch.where(((head == 2) | (head == 4) | (head == 5)))
+    print('car 1 pred : ', pred)
+    # batch_num_cat2 = torch.where(((pred == 0) | (pred == 1) | (pred == 3)))
+    batch_num_cat3 = torch.where(((pred == 2) | (pred == 4) | (pred == 5)))[0]
 
-    cat2_prev_head = head[batch_num_cat2]
+    # cat 1 pred 에서 label 1을 출력한 batch 찾아내기
+    batch_num_cat2_label03 = torch.where(((pred == 0) | (pred == 3)))[0]
+    batch_num_cat2_label1 = torch.where((pred == 1))[0]
+    batch_num_cat2, _ = torch.sort(torch.cat([batch_num_cat2_label03, batch_num_cat2_label1], dim=0))
+    print("batch_num_cat2 : ", batch_num_cat2)
+    print("batch_num_cat2_label1 : ", batch_num_cat2_label1)
+    print("batch_num_cat2_label03 : ", batch_num_cat2_label03)
+    print()
+    cat2_in_label1_batch_num = torch.tensor([0]).to("cuda")
+    for i in batch_num_cat2_label1 :
+        cat2_in_label1_batch_num = torch.cat([cat2_in_label1_batch_num, torch.where(batch_num_cat2==i)[0]])
+    print("cat2_in_label1_batch_num[1:] : ", cat2_in_label1_batch_num[1:])
+    cat2_in_label1_batch_num = cat2_in_label1_batch_num[1:]
+
+    print()
+    # cat 2에 들어갈 batch들 골라내서 cat2에 입력
+    cat2_prev_head = pred[batch_num_cat2]
     cat2_feature = feature[batch_num_cat2]
     print("cat2_prev_head : ",cat2_prev_head)
     print("cat2_feature.shape : ", cat2_feature.shape)
     x2 = m2(cat2_feature, cat2_prev_head)
+    print()
+    print("x2 : ", x2)
+    print()
+    # cat 2 pred에서 label 1, label 4 출력한 batch 찾아내서 제거 후 cat 3 입력으로 주기
+    # # 전체 batch에서 레포츠 - 복합레포츠 and 레포츠 - 레포츠소개 걸러내기
+    batch_num_cat2_label14 = torch.where(((x2[cat2_in_label1_batch_num]==1)|(x2[cat2_in_label1_batch_num]==4)))[0]
+    batch_num_cat2_label14 = batch_num_cat2[cat2_in_label1_batch_num[batch_num_cat2_label14]]
+    # cat1_cls1_cat2_cls14 =
+    print()
+    print("batch_num_cat2_label14 : ", batch_num_cat2_label14)
+    # print("cat1_cls1_cat2_cls14 : ", cat1_cls1_cat2_cls14)
 
-    cat3_feature = feature[batch_num_cat3]
+    ch = torch.arange(16).to("cuda")
+    for i in batch_num_cat2_label14 :
+        ch = ch[ch != i]
+    print("ch : ",  ch)
+    print('feature[ch].shape : ', feature[ch].shape)
+    print()
+    cat3_feature = feature[ch]
+
+    # cat1에서 label2, label4, label5 속한 값들 cat3의 5, 14, 15번 클래스로 변경
+    print("batch_num_cat3 : ", batch_num_cat3)
+    print("pred[batch_num_cat3] : ", pred[batch_num_cat3])
+    cat1_cls = pred[batch_num_cat3]
+    cat3_cls = CC_ENCODER(prev=None,cur=cat1_cls,category=1)
+    print("cat1_cls : ", cat1_cls)
+    print('cat3_cls : ', cat3_cls)
+    print()
+    # cat1에서 label0, label1, label3 속한 값들 cat3 클래스로 변경
+    # cat2 통과해서 나온 값들 cat3의 클래스로 넣어주기기
+    cat1_cls = pred[batch_num_cat2].detach().cpu().numpy().tolist()
+    cat2_cls = x2.detach().cpu().numpy().tolist()
+    print("cat1_cls : ", cat1_cls)
+    print("cat2_cls : ", cat2_cls)
+    cat3_cls = CC_ENCODER(prev=cat1_cls, cur=cat2_cls, category=2)
+    print('cat3_cls : ', cat3_cls)
 
 
-    # print(torch.where(((head==0)|(head==1)|(head==3))))
-    # print(torch.argmax(x1, dim=1))
-    # print(x1.shape)
+     # cat3_prev_head =
 
-
-    # print(x2)
-    # print(x2.shape)

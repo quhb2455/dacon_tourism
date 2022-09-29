@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+import pandas as pd
 import json
 import yaml
 import numpy as np
@@ -104,3 +105,86 @@ def read_cfg(path) :
     with open(path) as f:
         film = yaml.load(f, Loader=yaml.FullLoader)
     return film['cat1'], film['cat2'], film['cat3']
+
+class LABEL_ENCODER() :
+    def __init__(self, path):
+        self.base_encoder = self.base_label_encoder(path)
+
+    def base_label_encoder(self, path='./data/train.csv') :
+        df = pd.read_csv(path)
+        cat_encoder = {n_cat1: {} for n_cat1 in df['cat1'].unique()}
+        for n_cat1 in df['cat1'].unique():
+            cat2 = df[df['cat1'] == n_cat1]['cat2'].unique()
+
+            for n_cat2 in cat2:
+                cat3 = df[df['cat1'] == n_cat1][df['cat2'] == n_cat2]['cat3'].unique()
+                cat_encoder[n_cat1][n_cat2] = []
+
+                for n_cat3 in cat3:
+                    cat_encoder[n_cat1][n_cat2].append(n_cat3)
+        return cat_encoder
+
+    def cat1_label_encoder(self) :
+        cat1_encoder = {k: i for i, k in enumerate(self.base_encoder.keys())}
+        return cat1_encoder
+
+    def cat2_label_encoder(self) :
+        cat2_encoder = []
+        for cat1_k in self.base_encoder.keys():
+            cat2_encoder.append({cat2_k: i for i, cat2_k in enumerate(self.base_encoder[cat1_k].keys())})
+        return cat2_encoder
+
+    def cat3_label_encoder(self) :
+        cat3_encoder = []
+        for cat1_k in self.base_encoder.keys():
+            for i, cat2_k in enumerate(self.base_encoder[cat1_k].keys()):
+                cat3_encoder.append({cat3_k: i for i, cat3_k in enumerate(self.base_encoder[cat1_k][cat2_k])})
+        return cat3_encoder
+
+class CATEGORY_CLS_ENCODER() :
+    def __init__(self, path='./data/train.csv'):
+        self.base_encoder = LABEL_ENCODER(path=path).base_encoder
+        self.cat1_encoder = self.cat1_cls_encoder()
+        self.cat2_encoder = self.cat2_cls_encoder()
+        self.cat3_encoder = self.cat3_cls_encoder()
+
+    def __call__(self, prev, cur, category):
+        if category == 1:
+            cls_num = [self.cat1_encoder[c] for c in  cur]
+            return cls_num
+
+        elif category == 2:
+            cls_num = [self.cat2_encoder[p][c] for p, c in zip(prev, cur)]
+            return cls_num
+
+        elif category == 3:
+            cls_num = [self.cat3_encoder[p][c] for p, c in zip(prev, cur)]
+            return cls_num
+
+    def cat1_cls_encoder(self) :
+        # cat1_encoder = {0:0, 1:1, 2:5, 3:2, 4:14, 5:15}
+        cat1_encoder = [0, 1, 5, 2, 14, 15]
+        return cat1_encoder
+
+    def cat2_cls_encoder(self) :
+        cat2_encoder = []
+        cnt = 0
+        for cat1_k in self.base_encoder.keys():
+            cat2 = {}
+            for i, cat2_k in enumerate(self.base_encoder[cat1_k].keys()) :
+                cat2[i] = cnt
+                cnt += 1
+            cat2_encoder.append(cat2)
+        return cat2_encoder
+
+    def cat3_cls_encoder(self) :
+        cat3_encoder = []
+        cnt = 0
+        for cat1_k in self.base_encoder.keys():
+            for cat2_k in self.base_encoder[cat1_k].keys():
+                cat3 = {}
+                for i, cat3_k in enumerate(self.base_encoder[cat1_k][cat2_k]) :
+                    cat3[i] = cnt
+                    cnt+=1
+                cat3_encoder.append(cat3)
+        return cat3_encoder
