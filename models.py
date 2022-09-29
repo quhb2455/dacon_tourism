@@ -194,6 +194,10 @@ if __name__ == '__main__' :
     print('feature[ch].shape : ', feature[ch].shape)
     print()
     cat3_feature = feature[ch]
+    # cat1 -> cat2 에서 복합 레포츠, 레포츠소개 걸러낸 cls값
+    cat3_prev_head = x2[batch_num_cat2_label14]
+    print("cat3_prev_head : ", cat3_prev_head)
+
 
     # cat1에서 label2, label4, label5 속한 값들 cat3의 5, 14, 15번 클래스로 변경
     print("batch_num_cat3 : ", batch_num_cat3)
