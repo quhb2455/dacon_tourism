@@ -101,10 +101,12 @@ def mixup(imgs, labels):
 
     return mixed_imgs, lam, target_a, target_b
 
+
 def read_cfg(path) :
     with open(path) as f:
-        film = yaml.load(f, Loader=yaml.FullLoader)
-    return film['cat1'], film['cat2'], film['cat3']
+        y = yaml.load(f, Loader=yaml.FullLoader)
+    return y
+
 
 class LABEL_ENCODER() :
     def __init__(self, path):
@@ -144,26 +146,26 @@ class LABEL_ENCODER() :
 class CATEGORY_CLS_ENCODER() :
     def __init__(self, path='./data/train.csv'):
         self.base_encoder = LABEL_ENCODER(path=path).base_encoder
-        self.cat1_encoder = self.cat1_cls_encoder()
-        self.cat2_encoder = self.cat2_cls_encoder()
-        self.cat3_encoder = self.cat3_cls_encoder()
+        # self.cat1_encoder = self.cat1_cls_encoder()
+        # self.cat2_encoder = self.cat2_cls_encoder()
+        # self.cat3_encoder = self.cat3_cls_encoder()
 
-    def __call__(self, prev, cur, category):
-        if category == 1:
-            cls_num = [self.cat1_encoder[c] for c in  cur]
-            return cls_num
-
-        elif category == 2:
-            cls_num = [self.cat2_encoder[p][c] for p, c in zip(prev, cur)]
-            return cls_num
-
-        elif category == 3:
-            cls_num = [self.cat3_encoder[p][c] for p, c in zip(prev, cur)]
-            return cls_num
+    # def __call__(self, prev, cur, category):
+    #     if category == 1:
+    #         cls_num = [self.cat1_encoder[c] for c in  cur]
+    #         return cls_num
+    #
+    #     elif category == 2:
+    #         cls_num = [self.cat2_encoder[p][c] for p, c in zip(prev, cur)]
+    #         return cls_num
+    #
+    #     elif category == 3:
+    #         cls_num = [self.cat3_encoder[p][c] for p, c in zip(prev, cur)]
+    #         return cls_num
 
     def cat1_cls_encoder(self) :
         # cat1_encoder = {0:0, 1:1, 2:5, 3:2, 4:14, 5:15}
-        cat1_encoder = [0, 1, 5, 2, 14, 15]
+        cat1_encoder = [0, 1, 2, 3, 4, 5]
         return cat1_encoder
 
     def cat2_cls_encoder(self) :

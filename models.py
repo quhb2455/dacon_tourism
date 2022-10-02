@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+
+from loss_fn import FocalLoss, AsymmetricLoss
 import timm
 
 class FeatureFlatten(nn.Module) :
@@ -90,132 +92,131 @@ class MLP(nn.Module) :
 
 # 대분류 - 1개 -> 6개
 class ClassifierHead1(nn.Module) :
-    def __init__(self, num_layers, **kwargs):
+    def __init__(self, num_layers, loss_cfg=None, **kwargs):
         super(ClassifierHead1, self).__init__()
         self.linear = MLP(num_layers=num_layers, **kwargs)
+        self.loss_cfg = loss_cfg
 
-    def forward(self, x):
+    def forward(self, x, label=None):
         output = self.linear(x)
         pred = torch.argmax(output, dim=1)
-        return output, pred
+        loss = 0
+        if label is not None :
+            loss = FocalLoss(**self.loss_cfg['focal'])(output, label)
+            # loss = nn.CrossEntropyLoss()(output, label)
+        return pred, loss
 
 
 # 중분류 - 6개 -> 18개
 class ClassifierHead2(nn.Module) :
-    def __init__(self,  num_mlp, num_layers, out_c, **kwargs) :
+    def __init__(self,  num_mlp, num_layers, out_c, loss_cfg=None, **kwargs) :
         super(ClassifierHead2, self).__init__()
         self.linear = nn.ModuleList([MLP(num_layers=num_layers, out_c=out_c[i], **kwargs) for i in range(num_mlp)])
+        self.loss_cfg = loss_cfg
 
-    def forward(self, x, prev_head):
+    def forward(self, x, prev_head, label=None):
         pred = torch.zeros(1, dtype=torch.int32).to('cuda')
-
-        for i in range(0, prev_head.shape[0]) :
-            prev_head[i] = 2 if prev_head[i] == 3 else prev_head[i]
+        loss = 0
+        for i in range(x.shape[0]):
             output = self.linear[prev_head[i]](x[i])
             arg = torch.argmax(output, dim=0)
             pred = torch.cat([pred, arg.view(-1)], dim=0)
+            if label is not None :
+                loss += self.loss_fn(output, label[i])
+        return pred[1:], loss
 
-        return pred[1:]
-
+    def loss_fn(self, output, label):
+        if output.shape[0] == 1 :
+            loss = AsymmetricLoss(**self.loss_cfg['asymmetric'])(output, torch.tensor([label], dtype=torch.float32).to("cuda"))
+            # loss = nn.BCEWithLogitsLoss()(output, torch.tensor([label], dtype=torch.float32).to("cuda"))
+        else :
+            loss = FocalLoss(**self.loss_cfg['focal'])(output, label)
+            # loss = nn.CrossEntropyLoss()(output, label)
+        return loss
 
 # 소분류 - 18개 -> 128개
 class ClassifierHead3(nn.Module) :
-    def __init__(self, num_mlp, num_layers, out_c, **kwargs):
+    def __init__(self, num_mlp, num_layers, out_c, loss_cfg=None, **kwargs):
         super(ClassifierHead3, self).__init__()
-        self.liner = nn.ModuleList([MLP(num_layers=num_layers, out_c=out_c[i], **kwargs) for i in range(num_mlp)])
+        self.linear = nn.ModuleList([MLP(num_layers=num_layers, out_c=out_c[i], **kwargs) for i in range(num_mlp)])
+        self.loss_cfg = loss_cfg
 
-    def forward(self, x, prev_head):
-        return self.liner[prev_head](x)
+    def forward(self, x, prev_head, label=None):
+        pred = torch.zeros(1, dtype=torch.int32).to('cuda')
+        loss = 0
+        for i in range(x.shape[0]):
+            output = self.linear[prev_head[i]](x[i])
+            arg = torch.argmax(output, dim=0)
+            pred = torch.cat([pred, arg.view(-1)], dim=0)
+            if label is not None :
+                loss += self.loss_fn(output, label[i])
+        return pred[1:], loss
+
+    def loss_fn(self, output, label):
+        if output.shape[0] == 1 :
+            loss = AsymmetricLoss(**self.loss_cfg['asymmetric'])(output, torch.tensor([label], dtype=torch.float32).to("cuda"))
+            # loss = nn.BCEWithLogitsLoss()(output, torch.tensor([label], dtype=torch.float32).to("cuda"))
+        else :
+            loss = FocalLoss(**self.loss_cfg['focal'])(output, label)
+            # loss = nn.CrossEntropyLoss()(output, label)
+        return loss
+
+class MultiTaskModel(nn.Module) :
+    def __init__(self,
+                 model_name='swin_base_patch4_window7_224_in22k',
+                 head1_cfg=None,
+                 head2_cfg=None,
+                 head3_cfg=None,
+                 loss_cfg=None):
+
+        super(MultiTaskModel, self).__init__()
+        self.backbone = BackBone(model_name=model_name)
+        self.cls_head1 = ClassifierHead1(loss_cfg=loss_cfg, **head1_cfg)
+        self.cls_head2 = ClassifierHead2(loss_cfg=loss_cfg, **head2_cfg)
+        self.cls_head3 = ClassifierHead3(loss_cfg=loss_cfg, **head3_cfg)
+
+    def forward(self, x, label=None):
+
+        if label is None :
+            label = [None, None, None]
+
+        feature_map = self.backbone(x)
+        pred1, loss1 = self.cls_head1(feature_map, label=label[0])
+        pred2, loss2 = self.cls_head2(feature_map, pred1, label=label[1])
+        pred3, loss3 = self.cls_head3(feature_map, pred2, label=label[2])
+        return pred1, pred2, pred3, loss1, loss2, loss3
 
 
 if __name__ == '__main__' :
-    m = BackBone(model_name='swin_base_patch4_window7_224_in22k').to('cuda')
-    # m1 = ClassifierHead1(num_layers=3, in_c=1024, out_c=6, dropout_rate=0.4, bn=False).to("cuda")
-    # m2 = ClassifierHead2(num_mlp=3, num_layers=3, in_c=1024, out_c=[2, 5, 8], dropout_rate=0.4, bn=False).to("cuda")
-    # m3 = ClassifierHead3(num_mlp=16, num_layers=3, in_c=1024, out_c=[18, 2, 19, 8, 2, 8, 2, 10, 14, 8, 8, 3, 6, 3, 9, 7], dropout_rate=0.4, bn=False).to("cuda")
-    from utils import CATEGORY_CLS_ENCODER
-    CC_ENCODER = CATEGORY_CLS_ENCODER(path='./data/train.csv')
-
     from utils import read_cfg
-    c1, c2, c3 = read_cfg('config.yaml')
+    cls_config = read_cfg('./config/cls_config.yaml')
+    loss_config = read_cfg('./config/loss_config.yaml')
 
-    m0 = BackBone(model_name='swin_base_patch4_window7_224_in22k').to('cuda')
-    m1 = ClassifierHead1(**c1).to("cuda")
-    m2 = ClassifierHead2(**c2).to("cuda")
-    m3 = ClassifierHead3(**c3).to("cuda")
+    # m0 = BackBone(model_name='swin_base_patch4_window7_224_in22k').to('cuda')
+    # m1 = ClassifierHead1(**c1).to("cuda")
+    # m2 = ClassifierHead2(**c2).to("cuda")
+    # m3 = ClassifierHead3(**c3).to("cuda")
 
-    data = torch.rand((16,3,224,224)).to('cuda')
-    print(data.shape)
+    model = MultiTaskModel(model_name='swin_base_patch4_window7_224_in22k',
+                           head1_cfg=cls_config['head1'],
+                           head2_cfg=cls_config['head2'],
+                           head3_cfg=cls_config['head3'],
+                           loss_cfg=loss_config).to("cuda")
+    model.train()
 
-    feature = m0(data)
-    output, pred = m1(feature)
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-4)
+    label1 = torch.tensor([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0], dtype=torch.long).to("cuda")
+    label2 = torch.tensor([0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0], dtype=torch.long).to("cuda")
+    label3 = torch.tensor([0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=torch.long).to("cuda")
+    for i in range(16) :
+        optimizer.zero_grad()
+        data = torch.rand((16,3,224,224)).to('cuda')
 
-    print('car 1 pred : ', pred)
-    # batch_num_cat2 = torch.where(((pred == 0) | (pred == 1) | (pred == 3)))
-    batch_num_cat3 = torch.where(((pred == 2) | (pred == 4) | (pred == 5)))[0]
+        p1, p2, p3, loss1, loss2, loss3 = model(data, [label1, label2, label3])
+        print(f"loss 1 : {loss1}, loss 2 : {loss2}, loss 3 : {loss3}")
+        loss = loss1 + loss2 + loss3
+        print(f"loss : {loss}")
+        loss.backward()
+        optimizer.step()
 
-    # cat 1 pred 에서 label 1을 출력한 batch 찾아내기
-    batch_num_cat2_label03 = torch.where(((pred == 0) | (pred == 3)))[0]
-    batch_num_cat2_label1 = torch.where((pred == 1))[0]
-    batch_num_cat2, _ = torch.sort(torch.cat([batch_num_cat2_label03, batch_num_cat2_label1], dim=0))
-    print("batch_num_cat2 : ", batch_num_cat2)
-    print("batch_num_cat2_label1 : ", batch_num_cat2_label1)
-    print("batch_num_cat2_label03 : ", batch_num_cat2_label03)
-    print()
-    cat2_in_label1_batch_num = torch.tensor([0]).to("cuda")
-    for i in batch_num_cat2_label1 :
-        cat2_in_label1_batch_num = torch.cat([cat2_in_label1_batch_num, torch.where(batch_num_cat2==i)[0]])
-    print("cat2_in_label1_batch_num[1:] : ", cat2_in_label1_batch_num[1:])
-    cat2_in_label1_batch_num = cat2_in_label1_batch_num[1:]
-
-    print()
-    # cat 2에 들어갈 batch들 골라내서 cat2에 입력
-    cat2_prev_head = pred[batch_num_cat2]
-    cat2_feature = feature[batch_num_cat2]
-    print("cat2_prev_head : ",cat2_prev_head)
-    print("cat2_feature.shape : ", cat2_feature.shape)
-    x2 = m2(cat2_feature, cat2_prev_head)
-    print()
-    print("x2 : ", x2)
-    print()
-    # cat 2 pred에서 label 1, label 4 출력한 batch 찾아내서 제거 후 cat 3 입력으로 주기
-    # # 전체 batch에서 레포츠 - 복합레포츠 and 레포츠 - 레포츠소개 걸러내기
-    batch_num_cat2_label14 = torch.where(((x2[cat2_in_label1_batch_num]==1)|(x2[cat2_in_label1_batch_num]==4)))[0]
-    batch_num_cat2_label14 = batch_num_cat2[cat2_in_label1_batch_num[batch_num_cat2_label14]]
-    # cat1_cls1_cat2_cls14 =
-    print()
-    print("batch_num_cat2_label14 : ", batch_num_cat2_label14)
-    # print("cat1_cls1_cat2_cls14 : ", cat1_cls1_cat2_cls14)
-
-    ch = torch.arange(16).to("cuda")
-    for i in batch_num_cat2_label14 :
-        ch = ch[ch != i]
-    print("ch : ",  ch)
-    print('feature[ch].shape : ', feature[ch].shape)
-    print()
-    cat3_feature = feature[ch]
-    # cat1 -> cat2 에서 복합 레포츠, 레포츠소개 걸러낸 cls값
-    cat3_prev_head = x2[batch_num_cat2_label14]
-    print("cat3_prev_head : ", cat3_prev_head)
-
-
-    # cat1에서 label2, label4, label5 속한 값들 cat3의 5, 14, 15번 클래스로 변경
-    print("batch_num_cat3 : ", batch_num_cat3)
-    print("pred[batch_num_cat3] : ", pred[batch_num_cat3])
-    cat1_cls = pred[batch_num_cat3]
-    cat3_cls = CC_ENCODER(prev=None,cur=cat1_cls,category=1)
-    print("cat1_cls : ", cat1_cls)
-    print('cat3_cls : ', cat3_cls)
-    print()
-    # cat1에서 label0, label1, label3 속한 값들 cat3 클래스로 변경
-    # cat2 통과해서 나온 값들 cat3의 클래스로 넣어주기기
-    cat1_cls = pred[batch_num_cat2].detach().cpu().numpy().tolist()
-    cat2_cls = x2.detach().cpu().numpy().tolist()
-    print("cat1_cls : ", cat1_cls)
-    print("cat2_cls : ", cat2_cls)
-    cat3_cls = CC_ENCODER(prev=cat1_cls, cur=cat2_cls, category=2)
-    print('cat3_cls : ', cat3_cls)
-
-
-     # cat3_prev_head =
 

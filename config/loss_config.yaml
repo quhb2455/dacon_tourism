@@ -1,0 +1,12 @@
+focal :
+    alpha: 4
+    gamma : 4
+    logits : False
+    reduction : 'none'
+    
+asymmetric :
+    gamma_neg : 4
+    gamma_pos: 4
+    clip : 0.05
+    eps : 0.0000001
+    disable_torch_grad_focal_loss : True
