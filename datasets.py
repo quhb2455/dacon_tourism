@@ -104,7 +104,7 @@ def custom_dataload(img_set, label_set, csv_path, transform, batch_size, shuffle
 
 
 def train_and_valid_dataload(img_set, label_set, csv_path, transform, batch_size=16) :
-    train_loader = custom_dataload(img_set[0], label_set[0], csv_path, transform, batch_size, False)
+    train_loader = custom_dataload(img_set[0], label_set[0], csv_path, transform, batch_size, True)
     val_loader = custom_dataload(img_set[1], label_set[1], csv_path, transform, batch_size, False)
     return train_loader, val_loader
 

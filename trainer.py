@@ -9,14 +9,13 @@ from torch.utils.tensorboard import SummaryWriter
 
 from datasets import *
 from utils import *
-from models import CNN
+from models import MultiTaskModel
 from loss_fn import FocalLoss
 
 class Trainer() :
-    def __init__ (self, model, optimizer, criterion, device, args) :
+    def __init__ (self, model, optimizer, device, args) :
         self.model = model
         self.optimizer = optimizer
-        self.criterion = criterion
 
         self.train_loader ,self.val_loader = self.get_dataloader(args.CSV_PATH, args.IMG_PATH, args.BATCH_SIZE)
         
@@ -52,14 +51,6 @@ class Trainer() :
             img = img.to(self.device)
             label = label.to(self.device)
 
-            if self.APPLY_MIXUP:
-                img, lam, label_a, label_b = mixup(img, label)
-                output = self.model(img)
-                loss = lam * self.criterion(output, label_a) + (1 - lam) * self.criterion(output, label_b)
-            else:
-                output = self.model(img)
-                loss = self.criterion(output, label)
-
             loss.backward()
             self.optimizer.step()
 
@@ -91,7 +82,6 @@ class Trainer() :
                 label = label.to(self.device)
 
                 model_pred = self.model(img)
-                loss = self.criterion(model_pred, label)
 
                 val_loss.append(loss.item())
 
@@ -115,10 +105,9 @@ class Trainer() :
                 
         self.model_save(epoch, acc)
 
-    def kfold_setup(self, model, optimizer, criterion, train_ind, valid_ind, kfold):
+    def kfold_setup(self, model, optimizer, train_ind, valid_ind, kfold):
         self.model = model
         self.optimizer = optimizer
-        self.criterion = criterion
         self.train_loader, self.val_loader = train_and_valid_dataload((self.img_set[train_ind], self.img_set[valid_ind]),
                                                                       (self.label_set[train_ind], self.label_set[valid_ind]),
                                                                       self.transform,
@@ -131,9 +120,9 @@ class Trainer() :
         self.img_set, self.label_set, self.transform = image_label_dataset(csv_path,
                                                                            img_path,
                                                                            div=0.8,
-                                                                           grid_shuffle_p=0.8,
+                                                                           resize=224,
                                                                            training=True)
-        return train_and_valid_dataload(self.img_set, self.label_set, self.transform, batch_size=batch_size)
+        return train_and_valid_dataload(self.img_set, self.label_set, csv_path, self.transform, batch_size=batch_size)
 
 
     def model_save(self, epoch, val_acc):
@@ -154,7 +143,7 @@ if __name__ == "__main__" :
     parser.add_argument("--CTL_STEP", nargs="+", type=int, default=[36, 61])
     parser.add_argument("--FOCAL_GAMMA", type=int, default=2)
     parser.add_argument("--FOCAL_ALPHA", type=int, default=2)
-    parser.add_argument("--MODEL_NAME", type=str, default='efficientnet_b0')
+    parser.add_argument("--MODEL_NAME", type=str, default='swin_base_patch4_window7_224_in22k')
     parser.add_argument("--KFOLD", type=int, default=0)
 
     parser.add_argument("--IMG_PATH", type=str, default="./data/img/224img_train/*")
@@ -172,20 +161,26 @@ if __name__ == "__main__" :
     args = parser.parse_args()
     os.makedirs(args.OUTPUT, exist_ok=True)
 
+    cls_config = read_cfg('./config/cls_config.yaml')
+    loss_config = read_cfg('./config/loss_config.yaml')
+
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    model = CNN(args.MODEL_NAME).to(device)
+    model = MultiTaskModel(model_name=args.MODEL_NAME,
+                           head1_cfg=cls_config['head1'],
+                           head2_cfg=cls_config['head2'],
+                           head3_cfg=cls_config['head3'],
+                           loss_cfg=loss_config).to(device)
     optimizer = torch.optim.Adam(model.parameters(),
                                  lr=args.LEARNING_RATE)
-    criterion = FocalLoss(args.FOCAL_GAMMA, args.FOCAL_ALPHA)
 
     if args.KFOLD == 0 :
-        trainer = Trainer(model, optimizer, criterion, device, args)
+        trainer = Trainer(model, optimizer, device, args)
         trainer.run()
 
     elif args.KFOLD > 0 :
         kfold = StratifiedKFold(n_splits=args.KFOLD, shuffle=True)
-        trainer = Trainer(model, optimizer, criterion, device, args)
+        trainer = Trainer(model, optimizer, device, args)
         for k, (train_ind, valid_ind) in enumerate(kfold.split(trainer.img_set, trainer.label_set)) :
-            trainer.kfold_setup(model, optimizer, criterion, train_ind, valid_ind, k)
+            trainer.kfold_setup(model, optimizer, train_ind, valid_ind, k)
             trainer.run()

@@ -208,6 +208,7 @@ if __name__ == '__main__' :
     label1 = torch.tensor([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0], dtype=torch.long).to("cuda")
     label2 = torch.tensor([0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0], dtype=torch.long).to("cuda")
     label3 = torch.tensor([0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], dtype=torch.long).to("cuda")
+
     for i in range(16) :
         optimizer.zero_grad()
         data = torch.rand((16,3,224,224)).to('cuda')
