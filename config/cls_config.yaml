@@ -6,17 +6,15 @@ head1 :
     bn : False
     
 head2 :
-    num_mlp : 6
     num_layers: 3
     in_c : 1024
-    out_c : [2, 5, 1, 8, 1, 1]
+    out_c : 18
     dropout_rate : 0.4
     bn : False
     
 head3 :
-    num_mlp : 18
     num_layers: 3
     in_c : 1024
-    out_c : [18, 2, 19, 1, 8, 2, 1, 8, 2, 10, 13, 8, 8, 3, 6, 3, 9, 7]
+    out_c : 128
     dropout_rate : 0.4
     bn : False

@@ -6,3 +6,5 @@
 *.png
 *.jpeg
 data/
+ckpt/
+tensorboard/

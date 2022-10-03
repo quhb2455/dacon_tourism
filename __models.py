@@ -94,58 +94,121 @@ class MLP(nn.Module) :
 
 # 대분류 - 1개 -> 6개
 class ClassifierHead1(nn.Module) :
-    def __init__(self, num_layers, **kwargs):
+    def __init__(self, num_layers, loss_cfg=None, **kwargs):
         super(ClassifierHead1, self).__init__()
         self.linear = MLP(num_layers=num_layers, **kwargs)
+        self.focal = FocalLoss(**loss_cfg['focal'])
 
-    def forward(self, x):
-        return self.linear(x)
+    def forward(self, x, label=None):
+        output = self.linear(x)
+        pred = torch.argmax(output, dim=1)
+        loss = 0
+        if label is not None :
+            loss = self.focal(output, label)
+            # loss = nn.CrossEntropyLoss()(output, label)
+        return pred, loss
 
 
 # 중분류 - 6개 -> 18개
 class ClassifierHead2(nn.Module) :
-    def __init__(self, num_layers, **kwargs) :
+    def __init__(self,  num_mlp, num_layers, out_c, loss_cfg=None, **kwargs) :
         super(ClassifierHead2, self).__init__()
-        self.linear = MLP(num_layers=num_layers, **kwargs)
+        self.linear = nn.ModuleList([MLP(num_layers=num_layers, out_c=out_c[i], **kwargs) for i in range(num_mlp)])
+        self.asl = AsymmetricLoss(**loss_cfg['asymmetric'])
+        self.focal = FocalLoss(**loss_cfg['focal'])
 
-    def forward(self, x, mask):
-        output = self.linear(x)
-        output.masked_fill_(mask, -10000)
-        return output
+    def forward(self, x, prev_head, label=None):
+        pred = torch.zeros(1, dtype=torch.int32).to('cuda')
+        loss = 0
+        print("cls2 prev head : ",prev_head)
+        print("cls2 linear : ", self.linear)
+        print("cls2 label : ", label)
 
+        for i, ph in enumerate(prev_head) :
+            print("cls2 ph : ", ph)
+            output = self.linear[ph](x[i].unsqueeze(0))
+            arg = torch.argmax(output, dim=0)
+            pred = torch.cat([pred, arg.view(-1)], dim=0)
+            if label is not None :
+                loss += self.loss_fn(output, label[i])
+        return pred[1:], loss
+
+    def loss_fn(self, output, label):
+        print("cls2 output : ", output)
+        print("cls2 label : ", label)
+        if output[0].shape[0] == 1 :
+            loss = self.asl(output, label)#torch.tensor([label], dtype=torch.float32).to("cuda"))
+            print("2 aysm loss : ", loss)
+            # loss = nn.BCEWithLogitsLoss()(output, torch.tensor([label], dtype=torch.float32).to("cuda"))
+        else :
+            loss = self.focal(output[0], label)
+            print("2 focal loss : ", loss)
+            # loss = nn.CrossEntropyLoss()(output, label)
+        return loss
 
 # 소분류 - 18개 -> 128개
 class ClassifierHead3(nn.Module) :
-    def __init__(self, num_layers, **kwargs):
+    def __init__(self, num_mlp, num_layers, out_c, loss_cfg=None, **kwargs):
         super(ClassifierHead3, self).__init__()
-        self.linear = MLP(num_layers=num_layers, **kwargs)
+        self.linear = nn.ModuleList([MLP(num_layers=num_layers, out_c=out_c[i], **kwargs) for i in range(num_mlp)])
+        # self.loss_cfg = loss_cfg
+        self.asl = AsymmetricLoss(**loss_cfg['asymmetric'])
+        self.focal = FocalLoss(**loss_cfg['focal'])
 
-    def forward(self, x, mask):
-        output = self.linear(x)
-        output.masked_fill_(mask, -10000)
-        return output
+    def forward(self, x, prev_head, label=None):
+        pred = torch.zeros(1, dtype=torch.int32).to('cuda')
+        loss = 0
+        for i, ph in enumerate(prev_head) :
+            output = self.linear[ph](x[i].unsqueeze(0))
+            arg = torch.argmax(output, dim=0)
+            pred = torch.cat([pred, arg.view(-1)], dim=0)
+            if label is not None :
+                loss += self.loss_fn(output, label[i])
+        return pred[1:], loss
 
+    def loss_fn(self, output, label):
+        print("cls3 output : ", output)
+        print("cls3 label : ", label)
+        if output[0].shape[0] == 1 :
+            loss = self.asl(output, label)#torch.tensor([label], dtype=torch.float32).to("cuda"))
+            # loss = nn.BCEWithLogitsLoss()(output, torch.tensor([label], dtype=torch.float32).to("cuda"))
+            print("3 aysm loss : ", loss)
+        else :
+            loss = self.focal(output[0], label)
+            print("3 focal loss : ", loss)
+            # loss = nn.CrossEntropyLoss()(output, label)
+        return loss
 
 class MultiTaskModel(nn.Module) :
     def __init__(self,
                  model_name='swin_base_patch4_window7_224_in22k',
                  head1_cfg=None,
                  head2_cfg=None,
-                 head3_cfg=None,):
+                 head3_cfg=None,
+                 loss_cfg=None,
+                 path='./data/train.csv'):
 
         super(MultiTaskModel, self).__init__()
         self.backbone = BackBone(model_name=model_name)
-        self.cls_head1 = ClassifierHead1(**head1_cfg)
-        self.cls_head2 = ClassifierHead2(**head2_cfg)
-        self.cls_head3 = ClassifierHead3(**head3_cfg)
+        self.cls_head1 = ClassifierHead1(loss_cfg=loss_cfg, **head1_cfg)
+        self.cls_head2 = ClassifierHead2(loss_cfg=loss_cfg, **head2_cfg)
+        self.cls_head3 = ClassifierHead3(loss_cfg=loss_cfg, **head3_cfg)
 
-    def forward(self, x, label1=None,
-                label2=None, label3=None):
+        self.cls_enc = CATEGORY_CLS_ENCODER(path)
+        # self.cls1_enc = self.cls_enc.cat1_cls_encoder()
+        # self.cls2_enc = self.cls_enc.cat2_cls_encoder()
+        # self.cls3_enc = self.cls_enc.cat3_cls_encoder()
+
+    def forward(self, x, label1=None, label2=None, label3=None):
 
         feature_map = self.backbone(x)
         pred1, loss1 = self.cls_head1(feature_map, label=label1)
+        print("pred1 : ", pred1)
+        print("pred1 to pred2 ==> ", self.cls_enc(prev=None, cur=pred1, category=1))
 
         pred2, loss2 = self.cls_head2(feature_map, pred1, label=label2)
+        print("pred2 : ", pred2)
+        print("pred2 to pred3 ==> ", self.cls_enc(prev=pred1, cur=pred2, category=2))
 
         pred3, loss3 = self.cls_head3(feature_map,
                                       self.cls_enc(prev=pred1, cur=pred2, category=2),
@@ -162,10 +225,10 @@ if __name__ == '__main__' :
     img_path = './data/image/train/*'
     batch_size = 16
 
-    m0 = BackBone(model_name='swin_base_patch4_window7_224_in22k').to('cuda')
-    m1 = ClassifierHead1(**cls_config['head1']).to("cuda")
-    m2 = ClassifierHead2(**cls_config['head2']).to("cuda")
-    m3 = ClassifierHead3(**cls_config['head3']).to("cuda")
+    # m0 = BackBone(model_name='swin_base_patch4_window7_224_in22k').to('cuda')
+    # m1 = ClassifierHead1(**c1).to("cuda")
+    # m2 = ClassifierHead2(**c2).to("cuda")
+    # m3 = ClassifierHead3(**c3).to("cuda")
     img_set, label_set, transform = image_label_dataset(csv_path,
                                                        img_path,
                                                        div=0.8,
@@ -179,28 +242,26 @@ if __name__ == '__main__' :
     model = MultiTaskModel(model_name='swin_base_patch4_window7_224_in22k',
                            head1_cfg=cls_config['head1'],
                            head2_cfg=cls_config['head2'],
-                           head3_cfg=cls_config['head3']).to("cuda")
+                           head3_cfg=cls_config['head3'],
+                           loss_cfg=loss_config).to("cuda")
     model.train()
 
-    # optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-4)
     device = "cuda"
-
-    for batch, (img, label1, (label2, mask2), (label3, mask3)) in enumerate(train_loader, start=1):
+    for batch, (img, label1, label2, label3) in enumerate(train_loader, start=1):
         img = img.to(device)
         label1 = label1.to(device)
         label2 = label2.to(device)
         label3 = label3.to(device)
 
-        mask2 = mask2.to(device)
-        mask3 = mask3.to(device)
+        optimizer.zero_grad()
+        data = torch.rand((16,3,224,224)).to('cuda')
+        print("img.shape : ", img.shape)
+        p1, p2, p3, loss1, loss2, loss3 = model(img, label1, label2, label3)
+        print(f"loss 1 : {loss1}, loss 2 : {loss2}, loss 3 : {loss3}")
+        loss = loss1 + loss2 + loss3
+        print(f"loss : {loss}")
+        loss.backward()
+        optimizer.step()
 
-        feature_map = m0(img)
-        pred1 = m1(feature_map)
-        pred2 = m2(feature_map, mask2)
-        pred3 = m3(feature_map, mask3)
-        print(pred1.shape)
-        print(pred2.shape)
-        print(pred3.shape)
-
-        break
 

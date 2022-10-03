@@ -14,8 +14,16 @@ from utils import LABEL_ENCODER, CATEGORY_CLS_ENCODER
 class CustomDataset(Dataset):
     def __init__(self, img_list, label_set=None, path=None, transforms=None):
         self.img_list = img_list
+
         if label_set is not None :
-            self.cat1_label_list, self.cat2_label_list, self.cat3_label_list = self.label_encoder(path, label_set)
+            label_enc = LABEL_ENCODER(path)
+            self.cat1_enc = label_enc.cat1_label_encoder()
+            self.cat2_enc = label_enc.cat2_label_encoder()
+            self.cat3_enc = label_enc.cat3_label_encoder()
+            self.cat2_ig_enc = label_enc.cat2_label_index_encoder()
+            self.cat3_ig_enc = label_enc.cat3_label_index_encoder()
+
+            self.cat1_label_list, self.cat2_label_list, self.cat3_label_list = self.label_encoder(label_set)
         self.transforms = transforms
 
     def __len__(self):
@@ -36,27 +44,42 @@ class CustomDataset(Dataset):
             cat2_label = self.cat2_label_list[idx]
             cat3_label = self.cat3_label_list[idx]
 
+            cat2_mask, cat3_mask = self.label_ignore(cat1_label)
 
-            return img, torch.tensor(cat1_label), torch.tensor(cat2_label),  torch.tensor(cat3_label)
-
+            return img, torch.tensor(cat1_label), \
+                   (torch.tensor(cat2_label), torch.tensor(cat2_mask, dtype=torch.bool)), \
+                   (torch.tensor(cat3_label), torch.tensor(cat3_mask, dtype=torch.bool))
         # test
         else:
             return img
 
-    def label_encoder(self, path, label_set):
-        label_enc = LABEL_ENCODER(path)
-        cat1_enc = label_enc.cat1_label_encoder()
-        cat2_enc = label_enc.cat2_label_encoder()
-        cat3_enc = label_enc.cat3_label_encoder()
-
-        label_dec = CATEGORY_CLS_ENCODER(path)
-        cat2_dec = label_dec.cat2_cls_encoder()
-
-        cat1_label_list = list(map(lambda x: cat1_enc[x], label_set['cat1']))
-        cat2_label_list = list(map(lambda x, y: cat2_enc[y][x], label_set['cat2'], cat1_label_list))
-        cat3_label_list = list(map(lambda x, y, z: cat3_enc[cat2_dec[z][y]][x], label_set['cat3'], cat2_label_list, cat1_label_list))
-
+    def label_encoder(self, label_set):
+        cat1_label_list = list(map(lambda x: self.cat1_enc[x], label_set['cat1']))
+        cat2_label_list = list(map(lambda x: self.cat2_enc[x], label_set['cat2']))
+        cat3_label_list = list(map(lambda x: self.cat3_enc[x], label_set['cat3']))
         return cat1_label_list, cat2_label_list, cat3_label_list
+
+    def label_ignore(self, label1):
+        # masking에서 True는 적용하는 값 False는 적용안하는 값
+        label2_mask = [True] * 18
+        label3_mask = [True] * 128
+        for v1 in self.cat2_ig_enc[label1].values() :
+            label2_mask[v1] = False
+            for v2 in self.cat3_ig_enc[v1].values() :
+                label3_mask[v2] = False
+
+        return label2_mask, label3_mask
+
+def label_mask(label1, cat2_ig_enc, cat3_ig_enc):
+    # masking에서 True는 적용하는 값 False는 적용안하는 값
+    label2_mask = [True] * 18
+    label3_mask = [True] * 128
+    for v1 in cat2_ig_enc[label1].values() :
+        label2_mask[v1] = False
+        for v2 in cat3_ig_enc[v1].values() :
+            label3_mask[v2] = False
+
+    return label2_mask, label3_mask
 
 def transform_parser(resize=224) :
     return A.Compose([
@@ -125,10 +148,13 @@ if __name__ == "__main__" :
 
     cnt = 0
     for img, label1, label2, label3 in train_loader :
+
         print(label1, label2, label3)
-        break
+        if cnt == 3 :
+            break
+        cnt += 1
 
     cnt = 0
-    for img, label1, label2, label3 in val_loader :
-        print(label1, label2, label3)
-        break
+    # for img, label1, label2, label3 in val_loader :
+    #     print(label1, label2, label3)
+    #     break
