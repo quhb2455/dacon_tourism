@@ -9,7 +9,7 @@ from albumentations.pytorch import ToTensorV2
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from utils import LABEL_ENCODER, CATEGORY_CLS_ENCODER
+from utils import LABEL_ENCODER
 
 class CustomDataset(Dataset):
     def __init__(self, img_list, label_set=None, path=None, transforms=None):
@@ -44,11 +44,13 @@ class CustomDataset(Dataset):
             cat2_label = self.cat2_label_list[idx]
             cat3_label = self.cat3_label_list[idx]
 
-            cat2_mask, cat3_mask = self.label_ignore(cat1_label)
+            # cat2_mask, cat3_mask = self.label_ignore(cat1_label)
 
-            return img, torch.tensor(cat1_label), \
-                   (torch.tensor(cat2_label), torch.tensor(cat2_mask, dtype=torch.bool)), \
-                   (torch.tensor(cat3_label), torch.tensor(cat3_mask, dtype=torch.bool))
+            return img, torch.tensor(cat1_label), torch.tensor(cat2_label), torch.tensor(cat3_label)
+
+            # return img, torch.tensor(cat1_label), \
+            #        (torch.tensor(cat2_label), torch.tensor(cat2_mask, dtype=torch.bool)), \
+            #        (torch.tensor(cat3_label), torch.tensor(cat3_mask, dtype=torch.bool))
         # test
         else:
             return img
@@ -70,16 +72,15 @@ class CustomDataset(Dataset):
 
         return label2_mask, label3_mask
 
-def label_mask(label1, cat2_ig_enc, cat3_ig_enc):
+def label_mask(label, ig_enc, size):
     # masking에서 True는 적용하는 값 False는 적용안하는 값
-    label2_mask = [True] * 18
-    label3_mask = [True] * 128
-    for v1 in cat2_ig_enc[label1].values() :
+    label2_mask = [True] * size
+    for v1 in ig_enc[label].values() :
         label2_mask[v1] = False
         for v2 in cat3_ig_enc[v1].values() :
             label3_mask[v2] = False
-
     return label2_mask, label3_mask
+
 
 def transform_parser(resize=224) :
     return A.Compose([

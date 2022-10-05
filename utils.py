@@ -112,7 +112,7 @@ def read_cfg(path) :
 
 
 class LABEL_ENCODER() :
-    def __init__(self, path):
+    def __init__(self, path='./data/train.csv'):
         self.base_encoder = self.base_label_encoder(path)
 
     def base_label_encoder(self, path='./data/train.csv') :
@@ -178,28 +178,37 @@ class LABEL_ENCODER() :
                     cnt += 1
         return cat3_encoder
 
-class CATEGORY_CLS_ENCODER() :
+class CATEGORY_MASKING() :
     def __init__(self, path='./data/train.csv', device="cuda"):
         self.base_encoder = LABEL_ENCODER(path=path).base_encoder
         self.cat1_encoder = self.cat1_cls_encoder()
         self.cat2_encoder = self.cat2_cls_encoder()
         self.cat3_encoder = self.cat3_cls_encoder()
         self.device = device
-    def __call__(self, prev, cur, category):
-        prev = tensor2list(prev) if prev is not None else None
-        cur = tensor2list(cur)
+
+    def __call__(self, pred, category):
+        # prev = tensor2list(prev) if prev is not None else None
+        batch_size = pred.shape[0]
+        pred = tensor2list(pred)
 
         if category == 1:
-            cls_num = [self.cat1_encoder[c] for c in  cur]
-            return cls_num
+            mask = torch.tensor([[True] * 18] * batch_size, dtype=torch.bool)
+            for idx, c in enumerate(pred) :
+                mask[idx][list(self.cat2_encoder[c].values())] = False
+            return mask
 
         elif category == 2:
-            cls_num = torch.tensor([self.cat2_encoder[p][c] for p, c in zip(prev, cur)])
-            return cls_num.to(self.device)
+            mask = torch.tensor([[True] * 128] * batch_size, dtype=torch.bool)
+            for idx, c in enumerate(pred) :
+                mask[idx][list(self.cat3_encoder[c].values())] = False
+            return mask
 
-        elif category == 3:
-            cls_num = torch.tensor([self.cat3_encoder[p][c] for p, c in zip(prev, cur)])
-            return cls_num.to(self.device)
+        # elif category == 3:
+        #     mask = [[True] * 128] * cur.shape[0]
+        #     for idx, (p, c) in enumerate(zip(prev, cur)):
+        #         mask[idx][self.cat3_encoder[p][c]] = False
+        #     cls_num = torch.tensor([self.cat3_encoder[p][c] for p, c in zip(prev, cur)])
+        #     return cls_num.to(self.device)
 
     def cat1_cls_encoder(self) :
         # cat1_encoder = {0:0, 1:1, 2:5, 3:2, 4:14, 5:15}

@@ -22,8 +22,10 @@ class Trainer() :
         self.criterion = criterion
         self.optimizer = optimizer
 
-        self.train_loader, self.val_loader = self.get_dataloader(args.CSV_PATH, args.IMG_PATH, args.BATCH_SIZE)
-        
+        self.train_loader, self.val_loader = self.get_dataloader(args.CSV_PATH, args.IMG_PATH, args.BATCH_SIZE,
+                                                                 args.RESIZE)
+        self.masking_generator = CATEGORY_MASKING(path=args.CSV_PATH)
+
         self.log_writter = SummaryWriter(args.LOG)
         self.save_path = args.OUTPUT
         self.args = args
@@ -54,20 +56,26 @@ class Trainer() :
 
         tqdm_train = tqdm(self.train_loader)
         train_acc, train_loss = [], []
-        for batch, (img, label1, (label2, mask2), (label3, mask3)) in enumerate(tqdm_train, start=1):
+        # for batch, (img, label1, (label2, mask2), (label3, mask3)) in enumerate(tqdm_train, start=1):
+        for batch, (img, label1, label2, label3) in enumerate(tqdm_train, start=1):
             self.optimizer.zero_grad()
 
             img = img.to(self.device)
             label1 = label1.to(self.device)
             label2 = label2.to(self.device)
             label3 = label3.to(self.device)
-            mask2 = mask2.to(self.device)
-            mask3 = mask3.to(self.device)
+            # mask2 = mask2.to(self.device)
+            # mask3 = mask3.to(self.device)
 
             feature_map = self.backbone(img)
-            pred1 = self.head1(feature_map)
-            pred2 = self.head2(feature_map, mask2)
-            pred3 = self.head3(feature_map, mask3)
+
+            pred1 = self.head1(feature_map) # [batch, 6]
+
+            mask2 = self.masking_generator(pred1.argmax(1), category=1).to(self.device)
+            pred2 = self.head2(feature_map, mask2) # [batch, 18]
+
+            mask3 = self.masking_generator(pred2.argmax(1), category=2).to(self.device)
+            pred3 = self.head3(feature_map, mask3) # # [batch, 128]
 
             loss1 = self.criterion(pred1, label1)
             loss2 = self.criterion(pred2, label2)
@@ -119,23 +127,22 @@ class Trainer() :
         val_acc, val_loss = [], []
         tqdm_valid = tqdm(self.val_loader)
         with torch.no_grad():
-            for batch, (img, label1, (label2, mask2), (label3, mask3)) in enumerate(tqdm_valid):
-            # for batch, (img, label1, (label2, _), (label3, _)) in enumerate(tqdm_valid):
+            # for batch, (img, label1, (label2, mask2), (label3, mask3)) in enumerate(tqdm_valid):
+            for batch, (img, label1, label2, label3,) in enumerate(tqdm_valid):
                 img = img.to(self.device)
                 label1 = label1.to(self.device)
                 label2 = label2.to(self.device)
                 label3 = label3.to(self.device)
-                mask2 = mask2.to(self.device)
-                mask3 = mask3.to(self.device)
-
-                feature_map = self.backbone(img)
-                pred1 = self.head1(feature_map)
-                # ************* 이부분 다시 하기 >> Valid에선 Mask를 pred로부터 만들기
-                # mask2, mask3 = label_mask(tensor2list(label1), cat2_ig_enc, cat3_ig_enc)
                 # mask2 = mask2.to(self.device)
                 # mask3 = mask3.to(self.device)
 
+                feature_map = self.backbone(img)
+                pred1 = self.head1(feature_map)
+
+                mask2 = self.masking_generator(pred1.argmax(1), category=1).to(self.device)
                 pred2 = self.head2(feature_map, mask2)
+
+                mask3 = self.masking_generator(pred2.argmax(1), category=2).to(self.device)
                 pred3 = self.head3(feature_map, mask3)
 
                 loss1 = self.criterion(pred1, label1)
@@ -189,11 +196,11 @@ class Trainer() :
         self.save_path = os.path.join(self.args.OUTPUT, str(kfold) + self.args.MODEL_NAME)
 
 
-    def get_dataloader(self, csv_path, img_path, batch_size):
+    def get_dataloader(self, csv_path, img_path, batch_size, resize=224):
         self.img_set, self.label_set, self.transform = image_label_dataset(csv_path,
                                                                            img_path,
                                                                            div=0.8,
-                                                                           resize=224,
+                                                                           resize=resize,
                                                                            training=True)
         return train_and_valid_dataload(self.img_set, self.label_set, csv_path, self.transform, batch_size=batch_size)
 
@@ -215,15 +222,15 @@ if __name__ == "__main__" :
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--BATCH_SIZE", type=int, default=32)
     parser.add_argument("--LEARNING_RATE", type=float, default=1e-4)
-    parser.add_argument("--EPOCHS", type=int, default=3)
-    parser.add_argument("--MODEL_NAME", type=str, default='swin_base_patch4_window7_224_in22k')
+    parser.add_argument("--EPOCHS", type=int, default=60)
+    parser.add_argument("--MODEL_NAME", type=str, default='deit3_small_patch16_384_in21ft1k')
     parser.add_argument("--KFOLD", type=int, default=0)
-
+    parser.add_argument("--RESIZE", type=int, default=384)
     parser.add_argument("--IMG_PATH", type=str, default="./data/image/train/*")
     parser.add_argument("--CSV_PATH", type=str, default="./data/train.csv")
 
-    parser.add_argument("--OUTPUT", type=str, default='./ckpt/swin')
-    parser.add_argument("--LOG", type=str, default='./tensorboard/swin_no_vaild_mask')
+    parser.add_argument("--OUTPUT", type=str, default='./ckpt/deit3small16p384_mask')
+    parser.add_argument("--LOG", type=str, default='./tensorboard/deit3small16p384_mask')
 
     parser.add_argument("--REUSE", type=bool, default=False)
     parser.add_argument("--CHECKPOINT", type=str, default='./ckpt/3E-val0.8645-efficientnet_b0.pth')
@@ -242,7 +249,7 @@ if __name__ == "__main__" :
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    backbone = BackBone(model_name='swin_base_patch4_window7_224_in22k').to('cuda')
+    backbone = BackBone(model_name=args.MODEL_NAME).to('cuda')
     head1 = ClassifierHead1(**cls_config['head1']).to("cuda")
     head2 = ClassifierHead2(**cls_config['head2']).to("cuda")
     head3 = ClassifierHead3(**cls_config['head3']).to("cuda")

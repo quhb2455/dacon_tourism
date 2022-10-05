@@ -3,7 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 
 from loss_fn import FocalLoss, AsymmetricLoss
-from utils import CATEGORY_CLS_ENCODER, tensor2list
+from utils import CATEGORY_MASKING, tensor2list
 from datasets import *
 import timm
 
@@ -47,7 +47,6 @@ class CNN(nn.Module) :
 
     def forward(self, x):
         feature = self.backbone(x)
-
         cat1 = self.cls1(feature)
         cat2 = self.cls2(feature, cat1.argmax(1))
         cat3 = self.cls3(feature, cat2.argmax(1))
@@ -110,7 +109,7 @@ class ClassifierHead2(nn.Module) :
 
     def forward(self, x, mask):
         output = self.linear(x)
-        output.masked_fill_(mask, -10000)
+        output.masked_fill_(mask, -10)
         return output
 
 
@@ -122,7 +121,7 @@ class ClassifierHead3(nn.Module) :
 
     def forward(self, x, mask):
         output = self.linear(x)
-        output.masked_fill_(mask, -10000)
+        output.masked_fill_(mask, -10)
         return output
 
 
