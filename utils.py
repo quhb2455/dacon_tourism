@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from glob import glob
 import pandas as pd
 import json
 import yaml
@@ -41,6 +42,7 @@ def get_models(model, checkpoint):
     else:
         return models
 
+
 def save_to_csv(df, preds, save_path):
     df['label'] = preds
     df.to_csv(save_path, index=False)
@@ -63,6 +65,9 @@ def score(true_labels, model_preds) :
 
 def tensor2list(x):
     return x.detach().cpu().numpy().tolist()
+
+def list2tensor(x, dtype=torch.float, device="cuda"):
+    return torch.tensor(x, dtype=dtype).to(device)
 
 def rand_bbox(size, lam):
     W = size[2]
@@ -109,6 +114,14 @@ def read_cfg(path) :
     with open(path, encoding='UTF-8') as f:
         y = yaml.load(f, Loader=yaml.FullLoader)
     return y
+
+
+
+def read_label_weight(path) :
+    weight_list = glob(path)
+    return list2tensor(list(np.load(weight_list[0], allow_pickle=True))), \
+           list2tensor(list(np.load(weight_list[1], allow_pickle=True))), \
+           list2tensor(list(np.load(weight_list[2], allow_pickle=True)))
 
 
 class LABEL_ENCODER() :
@@ -192,15 +205,15 @@ class CATEGORY_MASKING() :
         pred = tensor2list(pred)
 
         if category == 1:
-            mask = torch.tensor([[True] * 18] * batch_size, dtype=torch.bool)
+            mask = torch.tensor([[0] * 18] * batch_size, dtype=torch.float32)
             for idx, c in enumerate(pred) :
-                mask[idx][list(self.cat2_encoder[c].values())] = False
+                mask[idx][list(self.cat2_encoder[c].values())] = 1
             return mask
 
         elif category == 2:
-            mask = torch.tensor([[True] * 128] * batch_size, dtype=torch.bool)
+            mask = torch.tensor([[0] * 128] * batch_size, dtype=torch.float32)
             for idx, c in enumerate(pred) :
-                mask[idx][list(self.cat3_encoder[c].values())] = False
+                mask[idx][list(self.cat3_encoder[c].values())] = 1
             return mask
 
         # elif category == 3:
@@ -237,3 +250,23 @@ class CATEGORY_MASKING() :
                     cnt+=1
                 cat3_encoder.append(cat3)
         return cat3_encoder
+
+class CLS_WEIGHT() :
+    def __init__(self, csv_path='./data/train.csv', device="cuda"):
+        self.masking_generator = CATEGORY_MASKING(path=csv_path)
+        self.device = device
+
+    def __call__(self, pred, num, category):
+        batch = pred.shape[0]
+        prev_cls_num = pred.shape[1]
+
+        pred_sm = pred.softmax(dim=1)
+        mask2 = torch.zeros(1, num).to(self.device)
+        for i in range(prev_cls_num):
+            mask3 = torch.zeros(1).to(self.device)
+            mask = self.masking_generator(torch.tensor([i] * batch), category=category).to(self.device)
+            for j in range(batch):
+                # mask[j, :] = torch.mul(mask[j, :],  pred_sm[j, i])
+                mask3 = torch.cat([mask3, torch.mul(mask[j, :], pred_sm[j, i])], dim=0)
+            mask2 = torch.cat([mask2, mask3[1:].reshape(batch, num)], dim=0)
+        return torch.sum(mask2[1:].reshape(prev_cls_num, batch, num), dim=0)

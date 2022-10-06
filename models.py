@@ -3,7 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 
 from loss_fn import FocalLoss, AsymmetricLoss
-from utils import CATEGORY_MASKING, tensor2list
+from utils import CATEGORY_MASKING, CLS_WEIGHT, tensor2list
 from datasets import *
 import timm
 
@@ -107,9 +107,15 @@ class ClassifierHead2(nn.Module) :
         super(ClassifierHead2, self).__init__()
         self.linear = MLP(num_layers=num_layers, **kwargs)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, mode='weight'):
         output = self.linear(x)
-        output.masked_fill_(mask, -10)
+
+        if mode == 'mask':
+            output.masked_fill_(mask, -10)
+
+        elif mode == 'weight':
+            output = output * mask
+
         return output
 
 
@@ -119,9 +125,15 @@ class ClassifierHead3(nn.Module) :
         super(ClassifierHead3, self).__init__()
         self.linear = MLP(num_layers=num_layers, **kwargs)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, mode='weight'):
         output = self.linear(x)
-        output.masked_fill_(mask, -10)
+
+        if mode == 'mask':
+            output.masked_fill_(mask, -10)
+
+        elif mode == 'weight':
+            output = output * mask
+
         return output
 
 
@@ -160,46 +172,45 @@ if __name__ == '__main__' :
     csv_path = './data/train.csv'
     img_path = './data/image/train/*'
     batch_size = 16
+    device = "cuda"
 
-    m0 = BackBone(model_name='swin_base_patch4_window7_224_in22k').to('cuda')
+    m0 = BackBone(model_name='deit3_small_patch16_384_in21ft1k').to('cuda')
     m1 = ClassifierHead1(**cls_config['head1']).to("cuda")
     m2 = ClassifierHead2(**cls_config['head2']).to("cuda")
     m3 = ClassifierHead3(**cls_config['head3']).to("cuda")
     img_set, label_set, transform = image_label_dataset(csv_path,
                                                        img_path,
                                                        div=0.8,
-                                                       resize=224,
+                                                       resize=384,
                                                        training=True)
     train_loader, val_loader = train_and_valid_dataload(img_set,
                                                         label_set,
                                                         csv_path,
                                                         transform, batch_size=batch_size)
 
-    model = MultiTaskModel(model_name='swin_base_patch4_window7_224_in22k',
+    model = MultiTaskModel(model_name='deit3_small_patch16_384_in21ft1k',
                            head1_cfg=cls_config['head1'],
                            head2_cfg=cls_config['head2'],
                            head3_cfg=cls_config['head3']).to("cuda")
     model.train()
-
+    cls_weight_generator = CLS_WEIGHT(csv_path=csv_path)#CATEGORY_MASKING(path=csv_path)
     # optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-4)
-    device = "cuda"
 
-    for batch, (img, label1, (label2, mask2), (label3, mask3)) in enumerate(train_loader, start=1):
+    for batch, (img, label1, label2, label3) in enumerate(train_loader, start=1):
         img = img.to(device)
         label1 = label1.to(device)
         label2 = label2.to(device)
         label3 = label3.to(device)
 
-        mask2 = mask2.to(device)
-        mask3 = mask3.to(device)
-
         feature_map = m0(img)
         pred1 = m1(feature_map)
-        pred2 = m2(feature_map, mask2)
-        pred3 = m3(feature_map, mask3)
-        print(pred1.shape)
-        print(pred2.shape)
-        print(pred3.shape)
+
+        cat2_cls_weight = cls_weight_generator(pred1, num=18, category=1)
+        pred2 = m2(feature_map, cat2_cls_weight, mode='weight')
+
+        cat3_cls_weight = cls_weight_generator(pred2, num=128, category=2)
+        pred3 = m3(feature_map, cat3_cls_weight, mode='weight')
+
 
         break
 

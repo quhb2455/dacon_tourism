@@ -13,18 +13,24 @@ from models import BackBone, ClassifierHead1, ClassifierHead2, ClassifierHead3
 from loss_fn import FocalLoss
 
 class Trainer() :
-    def __init__ (self, backbone, head1, head2, head3, criterion, optimizer, device, args) :
+    def __init__ (self, backbone, head1, head2, head3,
+                  criterion1, criterion2, criterion3, optimizer,
+                  device, args) :
         self.backbone = backbone
         self.head1 = head1
         self.head2 = head2
         self.head3 = head3
 
-        self.criterion = criterion
+        self.criterion1 = criterion1
+        self.criterion2 = criterion2
+        self.criterion3 = criterion3
+
         self.optimizer = optimizer
 
         self.train_loader, self.val_loader = self.get_dataloader(args.CSV_PATH, args.IMG_PATH, args.BATCH_SIZE,
                                                                  args.RESIZE)
-        self.masking_generator = CATEGORY_MASKING(path=args.CSV_PATH)
+        # self.masking_generator = CATEGORY_MASKING(path=args.CSV_PATH)
+        self.cls_weight_generator = CLS_WEIGHT(csv_path=args.CSV_PATH)
 
         self.log_writter = SummaryWriter(args.LOG)
         self.save_path = args.OUTPUT
@@ -71,15 +77,15 @@ class Trainer() :
 
             pred1 = self.head1(feature_map) # [batch, 6]
 
-            mask2 = self.masking_generator(pred1.argmax(1), category=1).to(self.device)
-            pred2 = self.head2(feature_map, mask2) # [batch, 18]
+            mask2 = self.cls_weight_generator(pred1, num=18, category=1)
+            pred2 = self.head2(feature_map, mask2, mode='weight') # [batch, 18]
 
-            mask3 = self.masking_generator(pred2.argmax(1), category=2).to(self.device)
-            pred3 = self.head3(feature_map, mask3) # # [batch, 128]
+            mask3 = self.cls_weight_generator(pred2, num=128, category=2)
+            pred3 = self.head3(feature_map, mask3, mode='weight') # # [batch, 128]
 
-            loss1 = self.criterion(pred1, label1)
-            loss2 = self.criterion(pred2, label2)
-            loss3 = self.criterion(pred3, label3)
+            loss1 = self.criterion1(pred1, label1)
+            loss2 = self.criterion2(pred2, label2)
+            loss3 = self.criterion3(pred3, label3)
             loss = loss1 + loss2 + loss3
             loss.backward()
             self.optimizer.step()
@@ -105,12 +111,12 @@ class Trainer() :
             })
 
             data = {
-                'training acc 1': acc1,
-                'training acc 2': acc2,
-                'training acc 3': acc3,
-                'training loss 1': loss1.item(),
-                'training loss 2': loss2.item(),
-                'training loss 3': loss3.item(),
+                'training acc/1': acc1,
+                'training acc/2': acc2,
+                'training acc/3': acc3,
+                'training loss/1': loss1.item(),
+                'training loss/2': loss2.item(),
+                'training loss/3': loss3.item(),
             }
             logging(self.log_writter, data, epoch * len(self.train_loader) + batch)
 
@@ -139,15 +145,15 @@ class Trainer() :
                 feature_map = self.backbone(img)
                 pred1 = self.head1(feature_map)
 
-                mask2 = self.masking_generator(pred1.argmax(1), category=1).to(self.device)
-                pred2 = self.head2(feature_map, mask2)
+                mask2 = self.cls_weight_generator(pred1, num=18, category=1)
+                pred2 = self.head2(feature_map, mask2, mode='weight')  # [batch, 18]
 
-                mask3 = self.masking_generator(pred2.argmax(1), category=2).to(self.device)
-                pred3 = self.head3(feature_map, mask3)
+                mask3 = self.cls_weight_generator(pred2, num=128, category=2)
+                pred3 = self.head3(feature_map, mask3, mode='weight')  # # [batch, 128]
 
-                loss1 = self.criterion(pred1, label1)
-                loss2 = self.criterion(pred2, label2)
-                loss3 = self.criterion(pred3, label3)
+                loss1 = self.criterion1(pred1, label1)
+                loss2 = self.criterion2(pred2, label2)
+                loss3 = self.criterion3(pred3, label3)
 
                 acc1 = f1_score(tensor2list(label1), tensor2list(pred1.argmax(1)), average='weighted')
                 acc2 = f1_score(tensor2list(label2), tensor2list(pred2.argmax(1)), average='weighted')
@@ -170,12 +176,12 @@ class Trainer() :
                 })
 
                 data = {
-                    'valid acc 1': acc1,
-                    'valid acc 2': acc2,
-                    'valid acc 3': acc3,
-                    'valid loss 1': loss1.item(),
-                    'valid loss 2': loss2.item(),
-                    'valid loss 3': loss3.item(),
+                    'valid acc/1': acc1,
+                    'valid acc/2': acc2,
+                    'valid acc/3': acc3,
+                    'valid loss/1': loss1.item(),
+                    'valid loss/2': loss2.item(),
+                    'valid loss/3': loss3.item(),
                 }
                 logging(self.log_writter, data, epoch * len(self.val_loader) + batch)
                 
@@ -228,19 +234,22 @@ if __name__ == "__main__" :
     parser.add_argument("--RESIZE", type=int, default=384)
     parser.add_argument("--IMG_PATH", type=str, default="./data/image/train/*")
     parser.add_argument("--CSV_PATH", type=str, default="./data/train.csv")
+    parser.add_argument("--LABEL_WEIGHT", type=str, default="./data/*_label_weight.npy")
 
-    parser.add_argument("--OUTPUT", type=str, default='./ckpt/deit3small16p384_mask')
-    parser.add_argument("--LOG", type=str, default='./tensorboard/deit3small16p384_mask')
+    parser.add_argument("--OUTPUT", type=str, default='./ckpt/ClsWeight_deit3small16p384')
+    parser.add_argument("--LOG", type=str, default='./tensorboard/ClsWeight_deit3small16p384')
 
     parser.add_argument("--REUSE", type=bool, default=False)
     parser.add_argument("--CHECKPOINT", type=str, default='./ckpt/3E-val0.8645-efficientnet_b0.pth')
 
     parser.add_argument("--START_EPOCH", type=int, default=0)
 
+    torch.autograd.set_detect_anomaly(True)
 
     args = parser.parse_args()
     cls_config = read_cfg('./config/cls_config.yaml')
     loss_config = read_cfg('./config/loss_config.yaml')
+    label_weight = read_label_weight(args.LABEL_WEIGHT)
 
     _args = vars(args)
     _args.update(cls_config)
@@ -254,7 +263,10 @@ if __name__ == "__main__" :
     head2 = ClassifierHead2(**cls_config['head2']).to("cuda")
     head3 = ClassifierHead3(**cls_config['head3']).to("cuda")
 
-    criterion = FocalLoss(**loss_config['focal'])
+    criterion1 = FocalLoss(class_weight=label_weight[0], **loss_config['focal'])
+    criterion2 = FocalLoss(class_weight=label_weight[1], **loss_config['focal'])
+    criterion3 = FocalLoss(class_weight=label_weight[2], **loss_config['focal'])
+
     optimizer = torch.optim.AdamW([{'params' : backbone.parameters()},
                                  {'params' : head1.parameters()},
                                  {'params' : head2.parameters()},
@@ -263,7 +275,9 @@ if __name__ == "__main__" :
 
     if args.KFOLD == 0 :
         print("***** NO KFOLD *****")
-        trainer = Trainer(backbone, head1, head2, head3, criterion, optimizer, device, args)
+        trainer = Trainer(backbone, head1, head2, head3,
+                          criterion1, criterion2, criterion3, optimizer,
+                          device, args)
         trainer.run()
 
     elif args.KFOLD > 0 :
