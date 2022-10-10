@@ -41,9 +41,12 @@ class Trainer() :
 
     def run(self):
         if self.args.REUSE :
-            self.model, self.optimizer, self.args.START_EPOCH = weight_load(self.model,
-                                                                            self.optimizer,
-                                                                            self.args.CHECKPOINT)
+            self.backbone, self.head1, self.head2, self.head3, self.optimizer, self.args.START_EPOCH = weight_load(self.backbone,
+                                                                                                        self.head1,
+                                                                                                        self.head2,
+                                                                                                        self.head3,
+                                                                                                        self.optimizer,
+                                                                                                        self.args.CHECKPOINT)
             
         for epoch in range(self.args.START_EPOCH + 1, self.args.EPOCHS + 1) :
 
@@ -51,7 +54,7 @@ class Trainer() :
             self.training(epoch)
 
             # validation
-            self.validation(epoch)
+            # self.validation(epoch)
 
 
     def training(self, epoch):
@@ -77,7 +80,12 @@ class Trainer() :
 
             pred1 = self.head1(feature_map) # [batch, 6]
 
+
             mask2 = self.cls_weight_generator(pred1, num=18, category=1)
+
+            # print(pred1)
+            # print(mask2)
+
             pred2 = self.head2(feature_map, mask2, mode='weight') # [batch, 18]
 
             mask3 = self.cls_weight_generator(pred2, num=128, category=2)
@@ -88,6 +96,7 @@ class Trainer() :
             loss3 = self.criterion3(pred3, label3)
             loss = loss1 + loss2 + loss3
             loss.backward()
+
             self.optimizer.step()
 
             acc1 = f1_score(tensor2list(label1), tensor2list(pred1.argmax(1)), average='weighted')
@@ -119,6 +128,7 @@ class Trainer() :
                 'training loss/3': loss3.item(),
             }
             logging(self.log_writter, data, epoch * len(self.train_loader) + batch)
+        self.model_save(epoch, mean_train_acc[2])
 
     def validation(self, epoch):
         self.backbone.eval()
@@ -205,7 +215,7 @@ class Trainer() :
     def get_dataloader(self, csv_path, img_path, batch_size, resize=224):
         self.img_set, self.label_set, self.transform = image_label_dataset(csv_path,
                                                                            img_path,
-                                                                           div=0.8,
+                                                                           div=1,
                                                                            resize=resize,
                                                                            training=True)
         return train_and_valid_dataload(self.img_set, self.label_set, csv_path, self.transform, batch_size=batch_size)
@@ -227,28 +237,32 @@ class Trainer() :
 if __name__ == "__main__" :
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--BATCH_SIZE", type=int, default=32)
-    parser.add_argument("--LEARNING_RATE", type=float, default=1e-4)
+    parser.add_argument("--LEARNING_RATE", type=float, default=0.001)
     parser.add_argument("--EPOCHS", type=int, default=60)
-    parser.add_argument("--MODEL_NAME", type=str, default='deit3_small_patch16_384_in21ft1k')
+    parser.add_argument("--MODEL_NAME", type=str, default='efficientnetv2_rw_m')
+    parser.add_argument("--MODEL_TYPE", type=str, default='cnn')
     parser.add_argument("--KFOLD", type=int, default=0)
-    parser.add_argument("--RESIZE", type=int, default=384)
+    parser.add_argument("--RESIZE", type=int, default=224)
     parser.add_argument("--IMG_PATH", type=str, default="./data/image/train/*")
     parser.add_argument("--CSV_PATH", type=str, default="./data/train.csv")
-    parser.add_argument("--LABEL_WEIGHT", type=str, default="./data/*_label_weight.npy")
+    parser.add_argument("--LABEL_WEIGHT", type=str, default="./data/*_label_weight2.npy")
+    parser.add_argument("--CLS_CONFIG", type=str, default='./config/cls_config.yaml')
+    parser.add_argument("--LOSS_CONFIG", type=str, default='./config/loss_config.yaml')
 
-    parser.add_argument("--OUTPUT", type=str, default='./ckpt/ClsWeight_deit3small16p384')
-    parser.add_argument("--LOG", type=str, default='./tensorboard/ClsWeight_deit3small16p384')
+    parser.add_argument("--OUTPUT", type=str, default='./ckpt/newlr0.01_fullData_maskingWeight_efficientnetv2_m')
+    parser.add_argument("--LOG", type=str, default='./tensorboard/newlr0.01_fullData_maskingWeight_efficientnetv2_m')
 
-    parser.add_argument("--REUSE", type=bool, default=False)
-    parser.add_argument("--CHECKPOINT", type=str, default='./ckpt/3E-val0.8645-efficientnet_b0.pth')
+    parser.add_argument("--REUSE", type=bool, default=True)
+    parser.add_argument("--CHECKPOINT", type=str, default='./ckpt/lr0.01_fullData_maskingWeight_efficientnetv2_m/29E-val0.59177165013744-efficientnetv2_rw_m.pth')
 
     parser.add_argument("--START_EPOCH", type=int, default=0)
 
     torch.autograd.set_detect_anomaly(True)
 
     args = parser.parse_args()
-    cls_config = read_cfg('./config/cls_config.yaml')
-    loss_config = read_cfg('./config/loss_config.yaml')
+    cls_config = read_cfg(args.CLS_CONFIG)
+    loss_config = read_cfg(args.LOSS_CONFIG)
+
     label_weight = read_label_weight(args.LABEL_WEIGHT)
 
     _args = vars(args)
@@ -258,14 +272,14 @@ if __name__ == "__main__" :
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    backbone = BackBone(model_name=args.MODEL_NAME).to('cuda')
+    backbone = BackBone(model_name=args.MODEL_NAME, model_type=args.MODEL_TYPE).to('cuda')
     head1 = ClassifierHead1(**cls_config['head1']).to("cuda")
     head2 = ClassifierHead2(**cls_config['head2']).to("cuda")
     head3 = ClassifierHead3(**cls_config['head3']).to("cuda")
 
-    criterion1 = FocalLoss(class_weight=label_weight[0], **loss_config['focal'])
-    criterion2 = FocalLoss(class_weight=label_weight[1], **loss_config['focal'])
-    criterion3 = FocalLoss(class_weight=label_weight[2], **loss_config['focal'])
+    criterion1 = FocalLoss(**loss_config['focal'])
+    criterion2 = FocalLoss(**loss_config['focal'])
+    criterion3 = FocalLoss(**loss_config['focal'])
 
     optimizer = torch.optim.AdamW([{'params' : backbone.parameters()},
                                  {'params' : head1.parameters()},

@@ -14,6 +14,7 @@ from utils import LABEL_ENCODER
 class CustomDataset(Dataset):
     def __init__(self, img_list, label_set=None, path=None, transforms=None):
         self.img_list = img_list
+        self.label_set = label_set
 
         if label_set is not None :
             label_enc = LABEL_ENCODER(path)
@@ -27,7 +28,9 @@ class CustomDataset(Dataset):
         self.transforms = transforms
 
     def __len__(self):
-        assert len(self.img_list) == len(self.cat1_label_list), 'must be same length between img_lst and label_list'
+        if self.label_set is not None :
+            assert len(self.img_list) == len(self.cat1_label_list), 'must be same length between img_lst and label_list'
+
         return len(self.img_list)
 
     def __getitem__(self, idx):
@@ -39,7 +42,7 @@ class CustomDataset(Dataset):
             img = self.transforms(image=img)['image']
 
         # training
-        if self.cat1_label_list is not None:
+        if self.label_set is not None:
             cat1_label = self.cat1_label_list[idx]
             cat2_label = self.cat2_label_list[idx]
             cat3_label = self.cat3_label_list[idx]
@@ -84,9 +87,11 @@ def label_mask(label, ig_enc, size):
 
 def transform_parser(resize=224) :
     return A.Compose([
-        A.Rotate(limit=(45), p=1),
-        # A.RandomGridShuffle(p=grid_shuffle_p, grid=(2,2)),
-        A.Resize(resize, resize),
+        A.Resize(250, 375),
+        A.OneOf([
+            A.RandomCrop(224, 224),
+            A.CenterCrop(224, 224)
+        ], p=1),
         A.Normalize(),
         ToTensorV2()
     ])
@@ -140,15 +145,24 @@ if __name__ == "__main__" :
 
     img_set, label_set, transform = image_label_dataset(csv_path,
                                                        img_path,
-                                                       div=0.8,
+                                                       div=1,
                                                        resize=224,
                                                        training=True)
 
     train_loader, val_loader = train_and_valid_dataload(img_set, label_set, csv_path, transform, batch_size=batch_size)
 
-
+    print(val_loader)
     cnt = 0
     for img, label1, label2, label3 in train_loader :
+
+        print(label1, label2, label3)
+        if cnt == 3 :
+            break
+        cnt += 1
+
+    cnt = 0
+    print("???")
+    for img, label1, label2, label3 in val_loader :
 
         print(label1, label2, label3)
         if cnt == 3 :

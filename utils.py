@@ -20,31 +20,39 @@ def weight_freeze(model) :
     return model
 
 
-def weight_load(model, optimizer, ckpt, training=True):
+def weight_load(backbone, head1, head2, head3, optimizer, ckpt, training=True):
     checkpoint = torch.load(ckpt)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    backbone.load_state_dict(checkpoint['backbone_state_dict'])
+    head1.load_state_dict(checkpoint['head1_state_dict'])
+    head2.load_state_dict(checkpoint['head2_state_dict'])
+    head3.load_state_dict(checkpoint['head3_state_dict'])
 
     if training :
+        print(f"Weight Loaded From {ckpt}..")
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        return model, optimizer, checkpoint['epoch']
+        return backbone, head1, head2, head3, optimizer, checkpoint['epoch']
 
     else :
-        return model
+        return backbone, head1, head2, head3
 
-def get_models(model, checkpoint):
-    models = []
+def get_models(backbone, head1, head2, head3, checkpoint):
+    backbones, head1s, head2s, head3s = [], [], [], []
     for path in checkpoint:
-        models.append(weight_load(model, None, path, training=False))
+        _backbone, _head1, _head2, _head3 = weight_load(backbone, head1, head2, head3, None, path, training=False)
+        backbones.append(_backbone)
+        head1s.append(_head1)
+        head2s.append(_head2)
+        head3s.append(_head3)
         print(f"MODEL LOAD ... from {path}")
 
-    if len(checkpoint) == 0:
-        return models[0]
+    if len(checkpoint) == 1:
+        return backbones[0], head1s[0], head2s[0], head3s[0]
     else:
-        return models
+        return backbones, head1s, head2s, head3s
 
 
 def save_to_csv(df, preds, save_path):
-    df['label'] = preds
+    df['cat3'] = preds
     df.to_csv(save_path, index=False)
 
 def save_config(cfg, output) :
