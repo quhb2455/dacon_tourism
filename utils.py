@@ -19,6 +19,18 @@ def weight_freeze(model) :
                     param.requires_grad = True
     return model
 
+def single_model_weight_load(model, optimizer, ckpt, training=True):
+    checkpoint = torch.load(ckpt)
+    model.load_state_dict(checkpoint['model_state_dict'])
+
+    if training :
+        print(f"Weight Loaded From {ckpt}..")
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        return model, optimizer, checkpoint['epoch']
+
+    else :
+        return model
+
 
 def weight_load(backbone, head1, head2, head3, optimizer, ckpt, training=True):
     checkpoint = torch.load(ckpt)
@@ -118,19 +130,30 @@ def mixup(imgs, labels):
     return mixed_imgs, lam, target_a, target_b
 
 
-def read_cfg(path) :
+def read_cfg(path, specific=None) :
     with open(path, encoding='UTF-8') as f:
         y = yaml.load(f, Loader=yaml.FullLoader)
-    return y
+    if specific is None :
+        return y
+    else :
+        return y[specific]
 
 
 
-def read_label_weight(path) :
+def read_label_weight(path, cat=None) :
     weight_list = glob(path)
-    return list2tensor(list(np.load(weight_list[0], allow_pickle=True))), \
-           list2tensor(list(np.load(weight_list[1], allow_pickle=True))), \
-           list2tensor(list(np.load(weight_list[2], allow_pickle=True)))
+    if cat is None :
+        return list2tensor(list(np.load(weight_list[0], allow_pickle=True))), \
+               list2tensor(list(np.load(weight_list[1], allow_pickle=True))), \
+               list2tensor(list(np.load(weight_list[2], allow_pickle=True)))
+    elif cat == 'head1':
+        return list2tensor(list(np.load(weight_list[0], allow_pickle=True)))
 
+    elif cat == 'head2':
+        return list2tensor(list(np.load(weight_list[1], allow_pickle=True)))
+
+    elif cat == 'head3':
+        return list2tensor(list(np.load(weight_list[2], allow_pickle=True)))
 
 class LABEL_ENCODER() :
     def __init__(self, path='./data/train.csv'):

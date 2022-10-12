@@ -5,6 +5,8 @@ from tqdm import tqdm
 
 import numpy as np
 from sklearn.metrics import f1_score, accuracy_score
+from sklearn.model_selection import StratifiedKFold
+
 from torch.utils.tensorboard import SummaryWriter
 
 from datasets import *
@@ -253,7 +255,7 @@ if __name__ == "__main__" :
     parser.add_argument("--LOG", type=str, default='./tensorboard/newlr0.01_fullData_maskingWeight_efficientnetv2_m')
 
     parser.add_argument("--REUSE", type=bool, default=True)
-    parser.add_argument("--CHECKPOINT", type=str, default='./ckpt/lr0.01_fullData_maskingWeight_efficientnetv2_m/29E-val0.59177165013744-efficientnetv2_rw_m.pth')
+    parser.add_argument("--CHECKPOINT", type=str, default='./ckpt/each_head/lossWeight-auged-effiv2s/28E-val0.9198814332761365-efficientnetv2_rw_s.pth')
 
     parser.add_argument("--START_EPOCH", type=int, default=0)
 

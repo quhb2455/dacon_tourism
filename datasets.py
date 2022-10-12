@@ -1,3 +1,5 @@
+import os
+
 import cv2
 from glob import glob
 import numpy as np
@@ -25,6 +27,7 @@ class CustomDataset(Dataset):
             self.cat3_ig_enc = label_enc.cat3_label_index_encoder()
 
             self.cat1_label_list, self.cat2_label_list, self.cat3_label_list = self.label_encoder(label_set)
+
         self.transforms = transforms
 
     def __len__(self):
@@ -35,7 +38,8 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = self.img_list[idx]
-        img = cv2.imread(img_path)
+
+        img = cv2.imread(os.path.join('./data/',img_path))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         if self.transforms:
@@ -89,22 +93,30 @@ def transform_parser(resize=224) :
     return A.Compose([
         A.Resize(250, 375),
         A.OneOf([
-            A.RandomCrop(224, 224),
-            A.CenterCrop(224, 224)
+            A.RandomCrop(resize, resize),
+            A.CenterCrop(resize, resize)
         ], p=1),
+        # A.OneOf([
+        #     A.ToGray(),
+        #     A.ChannelShuffle(),
+        # ], p=0.5),
         A.Normalize(),
         ToTensorV2()
     ])
 
 
 def img_parser(data_path, div, training=True):
-    path = sorted(list(map(lambda x : x.replace(x.split('.')[0], data_path.split('.')[0]), glob(data_path))),
-                  key=lambda x: int(x.split('\\')[-1].split('.')[0].split('_')[-1]))
-
+    # path = sorted(list(map(lambda x : x.replace(x.split('.')[0], data_path.split('.')[0]), glob(data_path))),
+    #               key=lambda x: int(x.split('\\')[-1].split('.')[0].split('_')[-1]))
+    #
+    # if training:
+    #     return path[:div], path[div:]
+    # else:
+    #     return path
     if training:
-        return path[:div], path[div:]
+        return list(data_path.iloc[:div]), list(data_path.iloc[div:])
     else:
-        return path
+        return list(data_path)
 
 
 def label_parser(df, div) :
@@ -117,7 +129,7 @@ def image_label_dataset(df_path, img_path, div=0.8, resize=224, training=True):
     transform = transform_parser(resize=resize)
 
     if training:
-        train_img, valid_img = img_parser(img_path, int(len(all_df) * div), training=training)
+        train_img, valid_img = img_parser(all_df['img_path'], int(len(all_df) * div), training=training)
         train_label_df, valid_label_df = label_parser(all_df, int(len(all_df) * div))
         return (train_img, valid_img), (train_label_df, valid_label_df), transform
 
@@ -134,8 +146,11 @@ def custom_dataload(img_set, label_set, csv_path, transform, batch_size, shuffle
 
 def train_and_valid_dataload(img_set, label_set, csv_path, transform, batch_size=16) :
     train_loader = custom_dataload(img_set[0], label_set[0], csv_path, transform, batch_size, True)
-    val_loader = custom_dataload(img_set[1], label_set[1], csv_path, transform, batch_size, False)
-    return train_loader, val_loader
+    if len(img_set[1]) == 0 :
+        return train_loader, None
+    else :
+        val_loader = custom_dataload(img_set[1], label_set[1], csv_path, transform, batch_size, True)
+        return train_loader, val_loader
 
 
 if __name__ == "__main__" :

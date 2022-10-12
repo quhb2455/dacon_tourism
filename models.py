@@ -36,22 +36,29 @@ class CNN(nn.Module) :
     def __init__(self,
                  model_name,
                  model_type,
-                 config_path):
+                 head_config,
+                 head_name):
         super(CNN, self).__init__()
-        c1, c2, c3 = read_cfg(config_path)
 
         self.backbone = BackBone(model_name, model_type)
-        self.cls1 = ClassifierHead1(**c1)
-        self.cls2 = ClassifierHead2(**c2)
-        self.cls3 = ClassifierHead3(**c3)
+        self.head_name = head_name
+
+        if head_name == 'head1':
+            self.cls = ClassifierHead1(**head_config)
+        elif head_name == 'head2':
+            self.cls = ClassifierHead2(**head_config)
+        elif head_name == 'head3':
+            self.cls = ClassifierHead3(**head_config)
+
 
     def forward(self, x):
         feature = self.backbone(x)
-        cat1 = self.cls1(feature)
-        cat2 = self.cls2(feature, cat1.argmax(1))
-        cat3 = self.cls3(feature, cat2.argmax(1))
+        if self.head_name == 'head1' :
+            output = self.cls(feature)
+        else :
+            output = self.cls(feature, mode=None)
+        return output
 
-        return cat1, cat2, cat3
 
 class FCL(nn.Module) :
     def __init__(self, in_c, out_c, dropout_rate, bn, last=False):
@@ -107,7 +114,7 @@ class ClassifierHead2(nn.Module) :
         super(ClassifierHead2, self).__init__()
         self.linear = MLP(num_layers=num_layers, **kwargs)
 
-    def forward(self, x, mask, mode='weight'):
+    def forward(self, x, mask=None, mode='weight'):
         output = self.linear(x)
 
         if mode == 'mask':
@@ -125,7 +132,7 @@ class ClassifierHead3(nn.Module) :
         super(ClassifierHead3, self).__init__()
         self.linear = MLP(num_layers=num_layers, **kwargs)
 
-    def forward(self, x, mask, mode='weight'):
+    def forward(self, x, mask=None, mode='weight'):
         output = self.linear(x)
 
         if mode == 'mask':
