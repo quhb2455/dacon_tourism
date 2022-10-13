@@ -37,12 +37,13 @@ class CNN(nn.Module) :
                  model_name,
                  model_type,
                  head_config,
-                 head_name):
+                 head_name,
+                 mode=None):
         super(CNN, self).__init__()
 
         self.backbone = BackBone(model_name, model_type)
         self.head_name = head_name
-
+        self.mode = mode
         if head_name == 'head1':
             self.cls = ClassifierHead1(**head_config)
         elif head_name == 'head2':
@@ -51,12 +52,12 @@ class CNN(nn.Module) :
             self.cls = ClassifierHead3(**head_config)
 
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         feature = self.backbone(x)
         if self.head_name == 'head1' :
             output = self.cls(feature)
         else :
-            output = self.cls(feature, mode=None)
+            output = self.cls(feature, mask=mask, mode=self.mode)
         return output
 
 
