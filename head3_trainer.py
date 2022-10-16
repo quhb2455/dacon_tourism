@@ -221,8 +221,10 @@ if __name__ == "__main__" :
     parser.add_argument("--OUTPUT", type=str, default='./ckpt/each_head/3/head1-2mask-lossWeight-auged-effiv2s')
     parser.add_argument("--LOG", type=str, default='./tensorboard/each_head/3/head1-2mask-lossWeight-auged-effiv2s')
 
-    parser.add_argument("--REUSE", type=bool, default=False)
-    parser.add_argument("--CHECKPOINT", type=str, default='./ckpt/each_head/2/head1mask-lossWeight-auged-effiv2s/22E-val0.7942-efficientnetv2_rw_s.pth')
+    parser.add_argument("--REUSE", type=bool, default=True)
+    # parser.add_argument("--CHECKPOINT", type=str, default='./ckpt/each_head/3/head1-2mask-lossWeight-auged-effiv2s/.pth')
+    parser.add_argument("--CHECKPOINT", type=str,
+                        default='./ckpt/each_head/3/head1-2mask-lossWeight-auged-effiv2s/26E-val0.6251-efficientnetv2_rw_s.pth')
     parser.add_argument("--START_EPOCH", type=int, default=0)
 
     parser.add_argument("--MIXUP", type=bool, default=False)
@@ -272,7 +274,8 @@ if __name__ == "__main__" :
               head_config=cls_config,
               head_name=args.TRAINING_HEAD,
               mode='weight').to("cuda")
-    criterion = FocalLoss(**loss_config['focal'], weight=label_weight)
+    criterion = FocalLoss(**loss_config['focal'])
+    # criterion = FocalLoss(**loss_config['focal'], weight=label_weight)
     optimizer = torch.optim.Adam(cnn.parameters(), lr=args.LEARNING_RATE)
 
 
