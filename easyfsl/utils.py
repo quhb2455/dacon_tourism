@@ -78,6 +78,9 @@ def compute_prototypes(support_features: Tensor, support_labels: Tensor) -> Tens
     """
 
     n_way = len(torch.unique(support_labels))
+    for label in range(n_way) :
+        print(torch.nonzero(support_labels == label))
+        print(support_features[torch.nonzero(support_labels == label)].shape)
     # Prototype i is the mean of all instances of features corresponding to labels == i
     return torch.cat(
         [

@@ -1,20 +1,23 @@
 head1 :
     num_layers: 2
-    in_c : 1792 #1280 #2152 #384 #1024
+    in_c : 768 #1536 #1792 #1280 #2152 #384 #1024
     out_c : 6
-    dropout_rate : 0.5
+    dropout_rate : 0.3
     bn : False
+    ln : True
     
 head2 :
     num_layers: 2
-    in_c : 1792 #1280 #2152 #384 #1024
+    in_c : 768 #1536 #1792 #1280 #2152 #384 #1024
     out_c : 18
-    dropout_rate : 0.5
+    dropout_rate : 0.3
     bn : False
+    ln : True
     
 head3 :
     num_layers: 2
-    in_c : 1792 #1280 #2152 #384 #1024
+    in_c : 768 #1536 #1792 #1280 #2152 #384 #1024
     out_c : 128
-    dropout_rate : 0.5
+    dropout_rate : 0.3
     bn : False
+    ln : True

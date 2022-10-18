@@ -128,7 +128,7 @@ if __name__ == "__main__" :
     parser.add_argument("--CLS_CONFIG", type=str, default='./config/cls_config.yaml')
     parser.add_argument("--LOSS_CONFIG", type=str, default='./config/loss_config.yaml')
 
-    parser.add_argument("--OUTPUT", type=str, default='./submission/59E-val0.7574-lr0.01_fullData_maskingWeight_efficientnetv2_m.csv')
+    parser.add_argument("--OUTPUT", type=str, default='./submission/29E-val0.8145-head1-2mask-lossWeight-auged-effiv2s.csv')
     parser.add_argument("--CHECKPOINT",  nargs="+", type=str,
                         default=['./ckpt/newlr0.01_fullData_maskingWeight_efficientnetv2_m/59E-val0.7574587666372415-efficientnetv2_rw_m.pth'])
 

@@ -32,20 +32,32 @@ def single_model_weight_load(model, optimizer, ckpt, training=True):
         return model
 
 
-def weight_load(backbone, head1, head2, head3, optimizer, ckpt, training=True):
+# def weight_load(backbone, head1, head2, head3, optimizer, ckpt, training=True):
+#     checkpoint = torch.load(ckpt)
+#     backbone.load_state_dict(checkpoint['backbone_state_dict'])
+#     head1.load_state_dict(checkpoint['head1_state_dict'])
+#     head2.load_state_dict(checkpoint['head2_state_dict'])
+#     head3.load_state_dict(checkpoint['head3_state_dict'])
+#
+#     if training :
+#         print(f"Weight Loaded From {ckpt}..")
+#         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+#         return backbone, head1, head2, head3, optimizer, checkpoint['epoch']
+#
+#     else :
+#         return backbone, head1, head2, head3
+
+def weight_load(model, optimizer, ckpt, training=True):
     checkpoint = torch.load(ckpt)
-    backbone.load_state_dict(checkpoint['backbone_state_dict'])
-    head1.load_state_dict(checkpoint['head1_state_dict'])
-    head2.load_state_dict(checkpoint['head2_state_dict'])
-    head3.load_state_dict(checkpoint['head3_state_dict'])
+    model.load_state_dict(checkpoint['model_state_dict'])
 
     if training :
         print(f"Weight Loaded From {ckpt}..")
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        return backbone, head1, head2, head3, optimizer, checkpoint['epoch']
+        return model, optimizer, checkpoint['epoch']
 
     else :
-        return backbone, head1, head2, head3
+        return model
 
 def get_models(backbone, head1, head2, head3, checkpoint):
     backbones, head1s, head2s, head3s = [], [], [], []
@@ -108,26 +120,31 @@ def rand_bbox(size, lam):
     return bbx1, bby1, bbx2, bby2
 
 
-def cutmix(imgs, labels):
+def cutmix(imgs, label1, label2, label3):
     lam = np.random.beta(1.0, 1.0)
     rand_index = torch.randperm(imgs.size()[0]).cuda()
-    target_a = labels
-    target_b = labels[rand_index]
     bbx1, bby1, bbx2, bby2 = rand_bbox(imgs.size(), lam)
     imgs[:, :, bbx1:bbx2, bby1:bby2] = imgs[rand_index, :, bbx1:bbx2, bby1:bby2]
 
     lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (imgs.size()[-1] * imgs.size()[-2]))
 
-    return imgs, lam, target_a, target_b
+    target_a1, target_b1 = label1, label1[rand_index]
+    target_a2, target_b2 = label2, label2[rand_index]
+    target_a3, target_b3 = label3, label3[rand_index]
+
+    return imgs, lam, target_a1, target_b1, target_a2, target_b2, target_a3, target_b3
 
 
-def mixup(imgs, labels):
+def mixup(imgs, label1, label2, label3):
     lam = np.random.beta(1.0, 1.0)
     rand_index = torch.randperm(imgs.size()[0]).cuda()
     mixed_imgs = lam * imgs + (1 - lam) * imgs[rand_index, :]
-    target_a, target_b = labels, labels[rand_index]
 
-    return mixed_imgs, lam, target_a, target_b
+    target_a1, target_b1 = label1, label1[rand_index]
+    target_a2, target_b2 = label2, label2[rand_index]
+    target_a3, target_b3 = label3, label3[rand_index]
+
+    return mixed_imgs, lam, target_a1, target_b1, target_a2, target_b2, target_a3, target_b3
 
 
 def read_cfg(path, specific=None) :

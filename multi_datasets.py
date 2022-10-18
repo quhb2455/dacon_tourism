@@ -7,6 +7,7 @@ import pandas as pd
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+from transformers import AutoTokenizer
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -17,6 +18,9 @@ class CustomDataset(Dataset):
     def __init__(self, img_list, label_set=None, path=None, transforms=None):
         self.img_list = img_list
         self.label_set = label_set
+        self.max_len=256
+        self.text_list = pd.read_csv(path)['overview'].values
+        self.tokenizer = AutoTokenizer.from_pretrained("klue/roberta-base")
 
         if label_set is not None :
             label_enc = LABEL_ENCODER(path)
@@ -39,12 +43,20 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.img_list[idx]
 
-        if self.label_set is not None:
-            img = cv2.imread(os.path.join('./data/',img_path))
-        else :
-            img = cv2.imread(img_path)
-
+        img = cv2.imread(os.path.join('./data/',img_path))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        text = self.text_list[idx]
+        text_data = self.tokenizer.encode_plus(
+            text,
+            add_special_tokens=True,
+            max_length=self.max_len,
+            return_token_type_ids=False,
+            padding='max_length',
+            truncation=True,
+            return_attention_mask=True,
+            return_tensors='pt',
+        )
 
         if self.transforms:
             img = self.transforms(image=img)['image']
@@ -55,16 +67,13 @@ class CustomDataset(Dataset):
             cat2_label = self.cat2_label_list[idx]
             cat3_label = self.cat3_label_list[idx]
 
-            # cat2_mask, cat3_mask = self.label_ignore(cat1_label)
+            return img, \
+                   text_data['input_ids'].flatten(), text_data['attention_mask'].flatten(), \
+                   torch.tensor(cat1_label), torch.tensor(cat2_label), torch.tensor(cat3_label)
 
-            return img, torch.tensor(cat1_label), torch.tensor(cat2_label), torch.tensor(cat3_label)
-
-            # return img, torch.tensor(cat1_label), \
-            #        (torch.tensor(cat2_label), torch.tensor(cat2_mask, dtype=torch.bool)), \
-            #        (torch.tensor(cat3_label), torch.tensor(cat3_mask, dtype=torch.bool))
         # test
         else:
-            return img
+            return img, text_data['input_ids'].flatten(), text_data['attention_mask'].flatten()
 
     def label_encoder(self, label_set):
         cat1_label_list = list(map(lambda x: self.cat1_enc[x], label_set['cat1']))
@@ -100,6 +109,10 @@ def transform_parser(resize=224) :
         #     A.RandomCrop(resize, resize),
         #     A.CenterCrop(resize, resize)
         # ], p=1),
+        # A.OneOf([
+        #     A.ToGray(),
+        #     A.ChannelShuffle(),
+        # ], p=0.5),
         A.Resize(resize+30, resize+30),
         A.RandomCrop(resize, resize),
         A.OneOf([
@@ -107,10 +120,6 @@ def transform_parser(resize=224) :
             A.RandomRotate90(p=1),
             A.VerticalFlip(p=1)
         ], p=1),
-        A.OneOf([
-            A.ToGray(),
-            A.ChannelShuffle(),
-        ], p=0.5),
         A.Normalize(),
         ToTensorV2()
     ])
@@ -123,7 +132,7 @@ def img_parser(data_path, training=True):
     # else:
     #     return path
     if training:
-        return data_path
+        return list(data_path)
     else:
         path = sorted(list(map(lambda x: x.replace(x.split('.')[0], data_path.split('.')[0]), glob(data_path))),
                       key=lambda x: int(x.split('\\')[-1].split('.')[0].split('_')[-1]))

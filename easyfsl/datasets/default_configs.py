@@ -48,7 +48,7 @@ def default_transform(image_size: int, training: bool) -> Callable:
 
     return (
         A.Compose([
-            A.Resize(250, 375),
+            A.Resize(320, 480),
             A.OneOf([
                 A.RandomCrop(image_size, image_size),
                 A.CenterCrop(image_size, image_size)
@@ -59,7 +59,7 @@ def default_transform(image_size: int, training: bool) -> Callable:
 
         if training
         else A.Compose([
-                    A.Resize(250, 375),
+                    A.Resize(320, 480),
                     A.OneOf([
                         A.RandomCrop(image_size, image_size),
                         A.CenterCrop(image_size, image_size)
