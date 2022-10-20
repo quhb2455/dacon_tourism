@@ -20,23 +20,23 @@ class CustomDataset(Dataset):
         self.label_set = label_set
         self.max_len=256
         self.text_list = pd.read_csv(path)['overview'].values
-        self.tokenizer = AutoTokenizer.from_pretrained("klue/roberta-base")
-
-        if label_set is not None :
-            label_enc = LABEL_ENCODER(path)
-            self.cat1_enc = label_enc.cat1_label_encoder()
-            self.cat2_enc = label_enc.cat2_label_encoder()
-            self.cat3_enc = label_enc.cat3_label_encoder()
-            self.cat2_ig_enc = label_enc.cat2_label_index_encoder()
-            self.cat3_ig_enc = label_enc.cat3_label_index_encoder()
-
-            self.cat1_label_list, self.cat2_label_list, self.cat3_label_list = self.label_encoder(label_set)
-
+        self.tokenizer = AutoTokenizer.from_pretrained("klue/roberta-large")
         self.transforms = transforms
 
+        # if label_set is not None :
+        #     label_enc = LABEL_ENCODER(path)
+        #     self.cat1_enc = label_enc.cat1_label_encoder()
+        #     self.cat2_enc = label_enc.cat2_label_encoder()
+        #     self.cat3_enc = label_enc.cat3_label_encoder()
+        #     self.cat2_ig_enc = label_enc.cat2_label_index_encoder()
+        #     self.cat3_ig_enc = label_enc.cat3_label_index_encoder()
+        #
+        #     self.cat1_label_list, self.cat2_label_list, self.cat3_label_list = self.label_encoder(label_set)
+
+
     def __len__(self):
-        if self.label_set is not None :
-            assert len(self.img_list) == len(self.cat1_label_list), 'must be same length between img_lst and label_list'
+        # if self.label_set is not None :
+        #     assert len(self.img_list) == len(self.cat1_label_list), 'must be same length between img_lst and label_list'
 
         return len(self.img_list)
 
@@ -63,9 +63,9 @@ class CustomDataset(Dataset):
 
         # training
         if self.label_set is not None:
-            cat1_label = self.cat1_label_list[idx]
-            cat2_label = self.cat2_label_list[idx]
-            cat3_label = self.cat3_label_list[idx]
+            cat1_label = int(self.label_set['cat1'].iloc[idx])
+            cat2_label = int(self.label_set['cat2'].iloc[idx])
+            cat3_label = int(self.label_set['cat3'].iloc[idx])
 
             return img, \
                    text_data['input_ids'].flatten(), text_data['attention_mask'].flatten(), \

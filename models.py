@@ -5,8 +5,7 @@ import torch.nn.functional as F
 from transformers import AutoModel
 
 from loss_fn import FocalLoss, AsymmetricLoss
-from utils import CATEGORY_MASKING, CLS_WEIGHT, tensor2list
-from datasets import *
+
 import timm
 
 class FeatureFlatten(nn.Module) :
@@ -198,31 +197,29 @@ class TextModel(nn.Module):
 
 class MultiTaskModel(nn.Module) :
     def __init__(self,
-                 img_model_name='swin_base_patch4_window7_224_in22k',
                  txt_model_name="klue/roberta-base",
                  head1_cfg=None,
                  head2_cfg=None,
                  head3_cfg=None):
 
         super(MultiTaskModel, self).__init__()
-        self.cnn = BackBone(model_name=img_model_name, pooling=False, model_type='transformer')
         self.nlp = TextModel(model_name=txt_model_name)
         self.cls_head1 = ClassifierHead1(**head1_cfg)
         self.cls_head2 = ClassifierHead2(**head2_cfg)
         self.cls_head3 = ClassifierHead3(**head3_cfg)
 
 
-    def forward(self, img, txt, att_mask):
-        img_output = self.cnn(img)
+    def forward(self, txt, att_mask):
+        # img_output = self.cnn(img)
         nlp_output = self.nlp(txt, att_mask)
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=self.nlp.model.config.hidden_size, nhead=8).to("cuda")
-        transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=2).to("cuda")
+        # encoder_layer = nn.TransformerEncoderLayer(d_model=self.nlp.model.config.hidden_size, nhead=8).to("cuda")
+        # transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=2).to("cuda")
 
-        concat_output = torch.cat([img_output, nlp_output.last_hidden_state], dim=1)
-        align_output = transformer_encoder(concat_output)
-        align_output = align_output[:, 0]
-
+        # concat_output = torch.cat([img_output, nlp_output.last_hidden_state], dim=1)
+        # align_output = transformer_encoder(concat_output)
+        # align_output = align_output[:, 0]
+        align_output = nlp_output.last_hidden_state[:, 0]
         pred1 = self.cls_head1(align_output)
         pred2 = self.cls_head2(align_output, mode=None)
         pred3 = self.cls_head3(align_output, mode=None)
@@ -231,6 +228,9 @@ class MultiTaskModel(nn.Module) :
 
 if __name__ == '__main__' :
     from utils import read_cfg
+    from utils import CATEGORY_MASKING, CLS_WEIGHT, tensor2list
+    from datasets import *
+
     cls_config = read_cfg('./config/cls_config.yaml')
     loss_config = read_cfg('./config/loss_config.yaml')
 

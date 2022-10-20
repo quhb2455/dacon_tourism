@@ -9,8 +9,9 @@ from sklearn.model_selection import StratifiedKFold
 
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import StepLR, ExponentialLR
-
-from datasets import *
+from transformers.optimization import get_cosine_schedule_with_warmup
+# from datasets import *
+from multi_datasets import *
 from utils import *
 from models import *
 from loss_fn import FocalLoss
@@ -41,21 +42,20 @@ class Trainer() :
             # validation
             self.validation(epoch)
 
-
     def training(self, epoch):
         self.model.train()
 
         tqdm_train = tqdm(self.train_loader)
         train_acc, train_loss = [], []
         # for batch, (img, label1, (label2, mask2), (label3, mask3)) in enumerate(tqdm_train, start=1):
-        # for batch, (img, txt, att_mask, label1, label2, label3) in enumerate(tqdm_train, start=1):
-        for batch, (img, label1, label2, label3) in enumerate(tqdm_train, start=1):
+        for batch, (img, txt, att_mask, label1, label2, label3) in enumerate(tqdm_train, start=1):
+        # for batch, (img, label1, label2, label3) in enumerate(tqdm_train, start=1):
 
             self.optimizer.zero_grad()
 
             img = img.to(device)
-            # txt = txt.to(device)
-            # att_mask = att_mask.to(device)
+            txt = txt.to(device)
+            att_mask = att_mask.to(device)
             label1 = label1.to(device)
             label2 = label2.to(device)
             label3 = label3.to(device)
@@ -84,17 +84,17 @@ class Trainer() :
                     loss1 = lam * self.criterion(pred1, label_a1) + (1 - lam) * self.criterion(pred1, label_b1)
                     loss2 = lam * self.criterion(pred2, label_a2) + (1 - lam) * self.criterion(pred2, label_b2)
                     loss3 = lam * self.criterion(pred3, label_a3) + (1 - lam) * self.criterion(pred3, label_b3)
+
             else:
-                pred1, pred2, pred3 = self.model(img)
+                pred1, pred2, pred3 = self.model(txt, att_mask)
                 loss1 = self.criterion(pred1, label1)
                 loss2 = self.criterion(pred2, label2)
                 loss3 = self.criterion(pred3, label3)
 
             loss = (loss1 * 0.05) + (loss2 * 0.15) + (loss3 * 0.8)
             loss.backward()
-
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             self.optimizer.step()
-            self.lr_scheduler.step()
 
             acc1 = f1_score(tensor2list(label1), tensor2list(pred1.argmax(1)), average='weighted')
             acc2 = f1_score(tensor2list(label2), tensor2list(pred2.argmax(1)), average='weighted')
@@ -127,6 +127,7 @@ class Trainer() :
             }
             logging(self.log_writter, data, epoch * len(self.train_loader) + batch)
 
+            self.lr_scheduler.step()
 
     def validation(self, epoch):
         self.model.eval()
@@ -134,17 +135,18 @@ class Trainer() :
         val_acc, val_loss = [], []
         tqdm_valid = tqdm(self.val_loader)
         with torch.no_grad():
-            # for batch, (img, txt, att_mask, label1, label2, label3) in enumerate(tqdm_valid):
-            for batch, (img, label1, label2, label3) in enumerate(tqdm_valid, start=1):
+            for batch, (img, txt, att_mask, label1, label2, label3) in enumerate(tqdm_valid):
+            # for batch, (img, label1, label2, label3) in enumerate(tqdm_valid, start=1):
 
                 img = img.to(device)
-                # txt = txt.to(device)
-                # att_mask = att_mask.to(device)
+                txt = txt.to(device)
+                att_mask = att_mask.to(device)
                 label1 = label1.to(device)
                 label2 = label2.to(device)
                 label3 = label3.to(device)
 
-                pred1, pred2, pred3 = self.model(img)
+                # pred1, pred2, pred3 = self.model(img)
+                pred1, pred2, pred3 = self.model(txt, att_mask)
                 loss1 = self.criterion(pred1, label1)
                 loss2 = self.criterion(pred2, label2)
                 loss3 = self.criterion(pred3, label3)
@@ -209,29 +211,29 @@ class Trainer() :
 
 if __name__ == "__main__" :
     parser = argparse.ArgumentParser(description="")
-    parser.add_argument("--BATCH_SIZE", type=int, default=16)
-    parser.add_argument("--LEARNING_RATE", type=float, default=0.007)
+    parser.add_argument("--BATCH_SIZE", type=int, default=64)
+    parser.add_argument("--LEARNING_RATE", type=float, default=0.001)
     parser.add_argument("--EPOCHS", type=int, default=60)
     parser.add_argument("--IMG_MODEL_NAME", type=str, default='beit_base_patch16_384')
-    parser.add_argument("--TXT_MODEL_NAME", type=str, default='klue/roberta-base')
+    parser.add_argument("--TXT_MODEL_NAME", type=str, default='klue/roberta-large')
     parser.add_argument("--MODEL_TYPE", type=str, default='transformer')
     parser.add_argument("--KFOLD", type=int, default=5)
     parser.add_argument("--RESIZE", type=int, default=384)
     parser.add_argument("--IMG_PATH", type=str, default="./data/image/train/*")
-    parser.add_argument("--CSV_PATH", type=str, default="./data/train.csv")
+    parser.add_argument("--CSV_PATH", type=str, default="./data/encoded_train.csv")
     parser.add_argument("--LABEL_WEIGHT", type=str, default="./data/*_label_weight2.npy")
     parser.add_argument("--CLS_CONFIG", type=str, default='./config/cls_config.yaml')
     parser.add_argument("--LOSS_CONFIG", type=str, default='./config/loss_config.yaml')
 
-    parser.add_argument("--OUTPUT", type=str, default='./ckpt/head_beit_bp16_384')
-    parser.add_argument("--SAVE_NAME", type=str, default='head_beit_bp16_384')
-    parser.add_argument("--LOG", type=str, default='./tensorboard/head_beit_bp16_384')
+    parser.add_argument("--OUTPUT", type=str, default='./ckpt/head_roberta_large')
+    parser.add_argument("--SAVE_NAME", type=str, default='head_roberta_large')
+    parser.add_argument("--LOG", type=str, default='./tensorboard/head_roberta_large')
 
     parser.add_argument("--REUSE", type=bool, default=False)
     parser.add_argument("--CHECKPOINT", type=str, default='./ckpt/')
 
     parser.add_argument("--START_EPOCH", type=int, default=0)
-    parser.add_argument("--AUG", type=bool, default=True)
+    parser.add_argument("--AUG", type=bool, default=False)
 
     torch.autograd.set_detect_anomaly(True)
 
@@ -248,18 +250,24 @@ if __name__ == "__main__" :
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    # model = MultiTaskModel(img_model_name=args.IMG_MODEL_NAME,
-    #                        txt_model_name=args.TXT_MODEL_NAME,
-    #                        head1_cfg=cls_config['head1'],
-    #                        head2_cfg=cls_config['head2'],
-    #                        head3_cfg=cls_config['head3']).to("cuda")
-    model = TransformerClassifier(model_name=args.IMG_MODEL_NAME,
-                                  model_type=args.MODEL_TYPE,
-                                  head_config=cls_config).to("cuda")
-    criterion = FocalLoss(**loss_config['focal'])
+    model = MultiTaskModel(txt_model_name=args.TXT_MODEL_NAME,
+                           head1_cfg=cls_config['head1'],
+                           head2_cfg=cls_config['head2'],
+                           head3_cfg=cls_config['head3']).to("cuda")
+    # model = TransformerClassifier(model_name=args.IMG_MODEL_NAME,
+    #                               model_type=args.MODEL_TYPE,
+    #                               head_config=cls_config).to("cuda")
+    # criterion = FocalLoss(**loss_config['focal'])
+    criterion = nn.CrossEntropyLoss().to("cuda")
     optimizer = torch.optim.AdamW(model.parameters(),
                                  lr=args.LEARNING_RATE)
-    lr_scheduler = ExponentialLR(optimizer, gamma=0.95)
+    # lr_scheduler = ExponentialLR(optimizer, gamma=0.95)
+    total_steps = 213 * 60
+    lr_scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=int(total_steps * 0.1),
+        num_training_steps=total_steps
+    )
 
     if args.KFOLD == 0 :
         print("***** NO KFOLD *****")
