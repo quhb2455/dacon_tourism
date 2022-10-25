@@ -6,14 +6,17 @@ class TourismModel(nn.Module):
         super(TourismModel, self).__init__()
         self.bert = bert
         self.bert.gradient_checkpointing_enable()
+
         self.classifierInputSize = hidden_size#1152 + 1024
-        self.classifier = []
+        #self.classifier = []
         if classes == None:
             self.num_classes = [6, 18, 128]
         else:
             self.num_classes = [len(_class) for _class in classes]
-        for _class in self.num_classes:
-            self.classifier.append(ClassifierLayer(self.classifierInputSize, _class))
+        #for _class in self.num_classes:
+        self.classifier1 = ClassifierLayer(self.classifierInputSize, self.num_classes[0])
+        self.classifier2 = ClassifierLayer(self.classifierInputSize, self.num_classes[1])
+        self.classifier3 = ClassifierLayer(self.classifierInputSize, self.num_classes[2])
 
     def gen_attention_mask(self, token_ids, valid_length):
         attention_mask = torch.zeros_like(token_ids)
@@ -33,12 +36,32 @@ class TourismModel(nn.Module):
         #pooler_output = tmp[1]
         #feature = torch.cat([img_feature, pooler_output], axis=1)
         #feature = pooler_output
-        output = []
-        for i in range(3):
-            _output = self.classifier[i].to(text.device)(outputs)
-            output.append(_output)
-
-        return output
+        output1 = self.classifier1.to(text.device)(outputs)
+        output2 = self.classifier2.to(text.device)(outputs)
+        output3 = self.classifier3.to(text.device)(outputs)
+        return [output1, output2, output3]
+# class classifier(nn.Module):
+#     def __init__(self, bert, hidden_size, classes=None):
+#         super(classifier, self).__init__()
+#         self.hidden_size = hidden_size
+#         if classes == None:
+#             self.num_classes = [6, 18, 128]
+#         else:
+#             self.num_classes = [len(_class) for _class in classes]
+#         for _class in self.num_classes:
+#             self.classifier.append(ClassifierLayer(self.classifierInputSize, _class))
+#
+#     def forward(self, output):
+#         encoder_layer = nn.TransformerEncoderLayer(d_model=self.hidden_size, nhead=8).to(output.device)
+#         transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=2).to(output.device)
+#         output = transformer_encoder(output.last_hidden_state)
+#         output = output[:,0]
+#
+#         outputs = []
+#         for i in range(3):
+#             _output = self.classifier[i].to(output.device)(output)
+#             outputs.append(_output)
+#         return outputs
 
 class ClassifierLayer(nn.Module):
     def __init__(self, hidden_size, num_classes):

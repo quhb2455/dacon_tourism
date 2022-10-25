@@ -1,0 +1,1 @@
+E 0 : train loss [3.8667 val loss [2.8625] t_score [0.33,0.20,0.15] v_score [0.52,0.43,0.36]

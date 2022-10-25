@@ -9,6 +9,7 @@ from tqdm import tqdm
 import numpy as np
 import os
 from transformers import BertModel, AutoModel
+import inference
 
 def train(model, train_loader, val_loader, device):
     optimizer = torch.optim.AdamW(params = model.parameters(), lr = options.LEARNING_RATE)
@@ -76,8 +77,10 @@ def train(model, train_loader, val_loader, device):
         print(f'Epoch [{epoch}], Train Loss : [{tr_loss:.5f}] Val Loss : [{val_loss:.5f}] Train Score : {train_score[2]:.5f} Val Score : [{val_score[0]:.5f}, {val_score[1]:.5f}, {val_score[2]:.5f}]')
         utils.save_log(epoch, tr_loss, val_loss, train_score, val_score)
         if epoch % options.SAVE_INTERVAL == 0:
-            save_path = os.path.join(options.MODEL_PATH, 'checkpoint_' + str(epoch) + '.pkl')
+            save_path = os.path.join(options.MODEL_PATH, 'checkpoint_' + str(epoch) + '.pt')
             utils.save_model(model, save_path, epoch)
+            save_name = 'auto_roberta-s_E' + str(epoch) + '_lr3e5_adamw_fullPreprocessing_PosExtractor_S20_infer.csv'
+            inference.infer_call(model, device, save_name)
         if best_score < val_score[2]:
             best_score = val_score[2]
             best_model = model
@@ -130,9 +133,9 @@ if __name__ == '__main__':
 
     train_loader, val_loader, classes = createDataLoader('./data/train_cleaned.csv', isCleaned)
     print('Data Load Complete')
-    kobert = AutoModel.from_pretrained("klue/roberta-small")
+    kobert = AutoModel.from_pretrained("klue/roberta-large")
     print(kobert.embeddings.word_embeddings)
-    model = TourismModel(kobert, 768, classes)
+    model = TourismModel(kobert, 1024, classes)
     print('Model Load Complete')
     model.eval()
 

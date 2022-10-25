@@ -29,12 +29,12 @@ def save_model(model, path, epoch):
 def load_model(model, path, device):
     ckpt = torch.load(path)
     epoch = ckpt['epoch']
-    model.load_state_dict(ckpt['model_state_dict'], strict=False)
+    model.load_state_dict(ckpt['model_state_dict'])#, strict=False)
     model.to(device)
     print(epoch, 'Model Load')
     return model, epoch
 
-def latest_checkpoint_path(dir_path, regex="checkpoint_*.pkl"):
+def latest_checkpoint_path(dir_path, regex="checkpoint_*.pt"):
     f_list = glob.glob(os.path.join(dir_path, regex))
     f_list.sort(key=lambda f: int("".join(filter(str.isdigit, f))))
     x = f_list[-1]

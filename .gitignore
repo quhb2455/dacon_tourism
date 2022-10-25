@@ -1,0 +1,9 @@
+*.csv
+*.jpg
+*.zip
+*.pth
+*.pt
+*.json
+*.h5
+tensorboard/
+data/

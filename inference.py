@@ -9,6 +9,7 @@ import pandas as pd
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 import options
+import os
 arr = ['5일장', 'ATV', 'MTB', '강', '게스트하우스', '계곡', '고궁', '고택', '골프', '공연장',
    '공예,공방', '공원', '관광단지', '국립공원', '군립공원', '기념관', '기념탑/기념비/전망대',
    '기암괴석', '기타', '기타행사', '농.산.어촌 체험', '다리/대교', '대중콘서트', '대형서점',
@@ -30,9 +31,9 @@ arr = ['5일장', 'ATV', 'MTB', '강', '게스트하우스', '계곡', '고궁',
 def inference(model, data_loader, device):
     model = model.eval()
     preds_arr = []
-    with torch.no_grad():
-        for img, text, attention_mask, raw in tqdm(iter(data_loader)):
-            
+
+    for img, text, attention_mask, raw in tqdm(iter(data_loader)):
+        with torch.no_grad():
             img = img.float().to(device)
             text = text.to(device)
             attention_mask = attention_mask.to(device)
@@ -40,21 +41,30 @@ def inference(model, data_loader, device):
             model_pred = model(img, text, attention_mask)
 
             _, preds = torch.max(model_pred[-1], dim=1)
-            for p, r in zip(preds, raw):
-                print('[', arr[int(p)], ']', r)
+            # for p, r in zip(preds, raw):
+            #     print('[', arr[int(p)], ']', r)
             preds_arr.extend(preds.cpu().numpy())
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            #nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     return preds_arr
 
-def makeSubmission(results):
+def makeSubmission(results, save_name):
     submit = pd.read_csv('./data/sample_submission.csv')
     for i in range(len(results)):
         submit.loc[i,'cat3'] = arr[results[i]]
-    submit.to_csv('./results/roberta-s_E10_lr3e5_adamw_fullPreprocessing_PosExtractor_S20.csv', index=False)
+    save_name = os.path.join('./results/', save_name)
+    submit.to_csv(save_name, index=False)
+
+def infer_call(model, device, save_name):
+    isCleaned = False
+    test_loader = createTestLoader('./data/test.csv', isCleaned)
+    model.eval()
+    results = inference(model, test_loader, device)
+    makeSubmission(results, save_name)
 
 if __name__ == '__main__':
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    ckpt_path = './ckpt/v5/checkpoint_10.pkl'
+    device = torch.device('cpu')
+    ckpt_path = './ckpt/checkpoint_10.pt'
     isCleaned = False
     test_loader = createTestLoader('./data/test.csv', isCleaned)
 
@@ -65,10 +75,10 @@ if __name__ == '__main__':
     # _le.fit(train_df['cat3'].values)
     # print(_le.classes_)
     # classes = _le.classes_
-    kobert = AutoModel.from_pretrained("klue/roberta-small")
-    model = TourismModel(kobert, 768)
+    kobert = AutoModel.from_pretrained("klue/roberta-large")
+    model = TourismModel(kobert, 1024)
     model, _ = utils.load_model(model, ckpt_path, device)
     model.eval()
 
     results = inference(model, test_loader, device)
-    makeSubmission(results)
+    makeSubmission(results, 'test_roberta-s_E10_lr3e5_adamw_fullPreprocessing_PosExtractor_S20.csv')

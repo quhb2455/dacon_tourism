@@ -36,7 +36,6 @@ arr = ['5일장', 'ATV', 'MTB', '강', '게스트하우스', '계곡', '고궁',
    '홈스테이', '희귀동.식물']
 class OktTokenizer:
     okt: Okt = Okt()
-
     def __call__(self, text: str) -> List[str]:
         tokens: List[str] = self.okt.pos(text, norm=True, stem=True, join=True)
         return tokens
@@ -45,9 +44,9 @@ class CustomDataset(Dataset):
     def __init__(self, all_df, transforms, infer=False, isCleaned=False):
         self.okttokenizer = OktTokenizer()
         self.textrank = TextRank(self.okttokenizer)
-        self.sentK = 20
+        self.sentK = 5
         self.img_path_list = all_df['img_path'].values
-        self.tokenizer = AutoTokenizer.from_pretrained("klue/roberta-small")
+        self.tokenizer = AutoTokenizer.from_pretrained("klue/roberta-large")
         self.text_list = all_df['overview'].values
         # self.text_vectors = [self.tokenizer.encode(self.textPreprocessing(text),
         #                                         padding='max_length',
@@ -60,7 +59,7 @@ class CustomDataset(Dataset):
         self.transforms = transforms
         self.infer = infer
         self.isCleaned = isCleaned
-        self.max_length = 512
+        self.max_length = 128
 
     def textPreprocessing(self, text):
         hang = re.compile('[^ㄱ-ㅣ가-힣. ]')
