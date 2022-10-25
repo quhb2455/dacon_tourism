@@ -46,7 +46,7 @@ class CustomDataset(Dataset):
         self.textrank = TextRank(self.okttokenizer)
         self.sentK = 5
         self.img_path_list = all_df['img_path'].values
-        self.tokenizer = AutoTokenizer.from_pretrained("klue/roberta-large")
+        self.tokenizer = AutoTokenizer.from_pretrained("klue/roberta-small")
         self.text_list = all_df['overview'].values
         # self.text_vectors = [self.tokenizer.encode(self.textPreprocessing(text),
         #                                         padding='max_length',

@@ -16,10 +16,11 @@ def seed_everything(seed):
     torch.backends.cudnn.benchmark = True
 
 def score_function(real, pred):
-    result = []
-    for r, p in zip(real, pred):
-        result.append(f1_score(r, p, average="weighted"))
-    return result
+    # result = []
+    # for r, p in zip(real, pred):
+    #     result.append(f1_score(r, p, average="weighted"))
+    # return result
+    return f1_score(real, pred, average="weighted")
 
 def save_model(model, path, epoch):
     torch.save({'epoch': epoch,
@@ -46,3 +47,10 @@ def save_log(e, t_loss, v_loss, t_score, v_score):
 
     with open(path, 'a') as f:
         f.write(f'E {e} : train loss [{t_loss:.4f} val loss [{v_loss:.4f}] t_score [{t_score[0]:.2f},{t_score[1]:.2f},{t_score[2]:.2f}] v_score [{v_score[0]:.2f},{v_score[1]:.2f},{v_score[2]:.2f}]\n')
+
+def weight_freeze(model) :
+    for i, child in enumerate(model.children()) :
+        for n, p in child.named_modules() :
+            if n in ['0', '1', '2', '3', '4']:
+                for param in p.parameters():
+                    param.requires_grad = False
